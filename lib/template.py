@@ -17,10 +17,18 @@ from subprocess import run
 
 def main(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["managed", "tenant"], help="Mode in which the script is called. It does not have any impact for this script.")
+    parser.add_argument(
+        "mode",
+        choices=["managed", "tenant"],
+        help="Mode in which the script is called. It does not have any impact for this script."
+    )
     parser.add_argument("--git", required=True, help="SSH clone string for a git repository")
     parser.add_argument("--branch", required=True, help="Branch name to be cloned, it can be a branch or a SHA.")
-    parser.add_argument("--path", required=True, help="Path to the file in the git repository hat will be templated, relative to the root of the repository, so 'config/' refers to the file 'config/myfile' in the root of the repository. Absolute paths are not allowed.")
+    parser.add_argument(
+        "--path",
+        required=True,
+        help="Path to the file in the git repository hat will be templated, relative to the root of the repository, " +
+        "so 'config/' refers to the file 'config/myfile' in the root of the repository. Absolute paths are not allowed.")
     args = parser.parse_args(argv)
 
     if Path(args.path).is_absolute():
@@ -36,10 +44,12 @@ def main(argv):
     git_cmd = ["git", "clone", args.git, "--branch", args.branch, "--depth", "1", tmpdir]
     cmd = run(git_cmd, capture_output=True)
     if cmd.returncode != 0:
+        stdout = cmd.stdout.decode('utf-8').strip('\n')
+        stderr = cmd.stderr.decode('utf-8').strip('\n')
         print("Something went wrong clonning, details below:")
         print(f"Command: '{' '.join(git_cmd)}'")
-        print(f"Stdout: '{cmd.stdout.decode("utf-8").strip("\n")}'")
-        print(f"Stderr: '{cmd.stderr.decode("utf-8").strip("\n")}'")
+        print(f"Stdout: '{stdout}'")
+        print(f"Stderr: '{stderr}'")
         exit(cmd.returncode)
 
     if not final_path.exists() or not final_path.is_file():

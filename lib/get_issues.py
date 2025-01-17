@@ -15,17 +15,21 @@ import requests
 
 def search_issues():
     parser = argparse.ArgumentParser(description='Get all issues from Jira query')
-    parser.add_argument("mode", choices=["managed", "tenant"], help="Mode in which the script is called. It does not have any impact for this script.")
-    parser.add_argument('-u','--url', help='URL to Jira', required=True)
-    parser.add_argument('-q','--query', help='Jira qrl query', required=True)
-    parser.add_argument('-c','--credentials-file', help='Path to credentials file', required=True)
+    parser.add_argument(
+        "mode",
+        choices=["managed", "tenant"],
+        help="Mode in which the script is called. It does not have any impact for this script."
+    )
+    parser.add_argument('-u', '--url', help='URL to Jira', required=True)
+    parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
+    parser.add_argument('-c', '--credentials-file', help='Path to credentials file', required=True)
     args = vars(parser.parse_args())
 
-    if ( not os.path.isfile(args['credentials_file'])):
-       print(f"ERROR: Path to credentials file {args['credentials_file']} doesn't exists")
-       exit(1)
+    if (not os.path.isfile(args['credentials_file'])):
+        print(f"ERROR: Path to credentials file {args['credentials_file']} doesn't exists")
+        exit(1)
 
-    return query_jira(args['url'], args['query'], args['credentials_file']) 
+    return query_jira(args['url'], args['query'], args['credentials_file'])
 
 
 def parse_credentials_file(credentials_file):

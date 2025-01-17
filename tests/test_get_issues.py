@@ -2,16 +2,16 @@ import os
 import pytest
 import requests
 from collections import namedtuple
-from pytest import MonkeyPatch
 
 import lib.get_issues
 from lib.get_issues import query_jira, parse_credentials_file
 
 
-MockResponse = namedtuple('MockResponse',['status_code','json'])
+MockResponse = namedtuple('MockResponse', ['status_code', 'json'])
+
 
 def mock_isfile(file):
-    return true
+    return True
 
 
 def mock_parse_credentials_file(file):
@@ -35,7 +35,8 @@ def mock_empty_query_jira(url, query, file):
 
 
 # empty response data
-mock_reponse_data_empty = { 'issues': [] }
+mock_reponse_data_empty = {'issues': []}
+
 
 def test_query_jira_empty_response(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
@@ -55,7 +56,8 @@ def mock_fail_query_jira(url, query, file):
     exit(1)
 
 
-mock_reponse_data_failure = { 'issues': [] }
+mock_reponse_data_failure = {'issues': []}
+
 
 # Test case for failed API response
 def test_query_jira_failure(monkeypatch):
@@ -79,10 +81,12 @@ mock_reponse_data_success = {
                 ]
             }
 
+
 # Test case for successful API response
 def test_query_jira_success(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
     monkeypatch.setattr(lib.get_issues, 'parse_credentials_file', mock_parse_credentials_file)
+
     def mock_post(url, headers, data):
         # Simulate a successful response (HTTP 200)
         return MockResponse(status_code=200, json=lambda: mock_reponse_data_success)

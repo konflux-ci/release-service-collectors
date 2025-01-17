@@ -6,6 +6,7 @@ import pytest
 
 from lib import template
 
+
 @pytest.fixture(scope="module")
 def git_repository():
     git_folder = tempfile.mkdtemp()
@@ -18,6 +19,7 @@ def git_repository():
 
     return git_folder
 
+
 def test_error_path_outside_repository(git_repository):
     with pytest.raises(SystemExit):
         template.main([
@@ -27,6 +29,7 @@ def test_error_path_outside_repository(git_repository):
             "--path", "../LICENSE",
         ])
 
+
 def test_error_absolute(git_repository):
     with pytest.raises(SystemExit):
         template.main([
@@ -35,6 +38,7 @@ def test_error_absolute(git_repository):
             "--branch", "main",
             "--path", "/LICENSE",
         ])
+
 
 def test_correct(capsys, git_repository):
     template.main([
@@ -47,6 +51,7 @@ def test_correct(capsys, git_repository):
     captured = capsys.readouterr()
     assert "# Hello" in captured.out
 
+
 def test_error_key_templating(git_repository):
     with pytest.raises(SystemExit):
         template.main([
@@ -55,6 +60,7 @@ def test_error_key_templating(git_repository):
             "--branch", "main",
             "--path", "template.json",
         ])
+
 
 def test_correct_key_templating(monkeypatch, capsys, git_repository):
     monkeypatch.setenv("ENV_VAR", "Template me please")
@@ -68,6 +74,7 @@ def test_correct_key_templating(monkeypatch, capsys, git_repository):
     captured = capsys.readouterr()
     assert "Template me please" in captured.out
 
+
 def test_error_non_existent_file(git_repository):
     with pytest.raises(SystemExit):
         template.main([
@@ -77,6 +84,7 @@ def test_error_non_existent_file(git_repository):
             "--path", "NON_EXISTENT",
         ])
 
+
 def test_error_non_existent_repository():
     with pytest.raises(SystemExit):
         template.main([
@@ -85,6 +93,7 @@ def test_error_non_existent_repository():
             "--branch", "main",
             "--path", "LICENSE",
         ])
+
 
 def test_error_non_existing_branch(git_repository):
     with pytest.raises(SystemExit):
