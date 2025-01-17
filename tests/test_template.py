@@ -14,6 +14,8 @@ def git_repository():
     (Path(git_folder) / "template.json").write_text('{"message": "{ENV_VAR}"}')
 
     run(["git", "init", git_folder, "--initial-branch", "main"], check=True)
+    run(["git", "-C", git_folder, "config", "user.email", "you@example.com"], check=True)
+    run(["git", "-C", git_folder, "config", "user.name", "You @ Example"], check=True)
     run(["git", "-C", git_folder, "add", "."], check=True)
     run(["git", "-C", git_folder, "commit", "-m", "Initial commit"], check=True)
 
