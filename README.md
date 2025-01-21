@@ -51,6 +51,21 @@ $ python lib/get_issues.py <tenant/managed> \
 ["KONFLUX-1", "KONFLUX-2", "KONFLUX-3", ...]
 ```
 
+### CVE
+
+The CVE collector works by running the command against a git repository branch.
+It requires a git repository and a branch.
+The script returns the entries which inclue ^fix(CVE-XXX) in the git logs commites.
+
+Example execution:
+```
+$python lib/get_cve.py <tenant/managed> \
+  --git https://github.com/konflux-ci/konflux-ci.git
+  --branch main
+["fix(CVE-3444): test1", "fix(CVE-3445): test2"]
+```
+
+
 ## Tests
 
 To install `pytest` you can do:
