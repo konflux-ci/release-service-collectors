@@ -5,6 +5,16 @@ python lib/get_issue.py \
      --url https://issues.redhat.com \
     --query 'project = KONFLUX AND status = "NEW"' \
      --credentials-file ../cred-file.json
+
+output:
+{
+  "issues": {
+    "fixed": [
+      { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+      { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+    ]
+  }
+}
 """
 
 import argparse
@@ -29,8 +39,30 @@ def search_issues():
         print(f"ERROR: Path to credentials file {args['credentials_file']} doesn't exists")
         exit(1)
 
-    return query_jira(args['url'], args['query'], args['credentials_file'])
+    issues =  query_jira(args['url'], args['query'], args['credentials_file'])
 
+    return create_json_record(issues, args['url'])
+
+def create_json_record(issues, url):
+    """
+    {
+        "issues": {
+            "fixed": [
+               { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+               { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+            ]
+        }
+    }
+    """
+    data = {
+        "issues": {
+            "fixed": 
+                [{ "id": issue, "source": url }  for issue in issues]
+        }
+    }                         
+    #return json.dumps(data)
+    return data
+    
 
 def parse_credentials_file(credentials_file):
     """
@@ -93,5 +125,5 @@ def query_jira(jira_domain_url, jql_query, credentials_file):
 
 
 if __name__ == "__main__":
-    return_list_issues = search_issues()
-    print(return_list_issues)
+    return_issues = search_issues()
+    print(json.dumps(return_issues))
