@@ -3,8 +3,8 @@ import pytest
 import requests
 from collections import namedtuple
 
-import lib.get_issues
-from lib.get_issues import query_jira, parse_credentials_file
+import lib.jira
+from lib.jira import query_jira, parse_credentials_file
 
 
 MockResponse = namedtuple('MockResponse', ['status_code', 'json'])
@@ -40,8 +40,8 @@ mock_reponse_data_empty = {'issues': []}
 
 def test_query_jira_empty_response(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
-    monkeypatch.setattr(lib.get_issues, 'parse_credentials_file', mock_parse_credentials_file)
-    monkeypatch.setattr(lib.get_issues, 'query_jira', mock_empty_query_jira)
+    monkeypatch.setattr(lib.jira, 'parse_credentials_file', mock_parse_credentials_file)
+    monkeypatch.setattr(lib.jira, 'query_jira', mock_empty_query_jira)
 
     def mock_post(url, headers, data):
         # Simulating a successful response with no issues (HTTP 200)
@@ -62,8 +62,8 @@ mock_reponse_data_failure = {'issues': []}
 # Test case for failed API response
 def test_query_jira_failure(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
-    monkeypatch.setattr(lib.get_issues, 'parse_credentials_file', mock_parse_credentials_file)
-    monkeypatch.setattr(lib.get_issues, 'query_jira', mock_fail_query_jira)
+    monkeypatch.setattr(lib.jira, 'parse_credentials_file', mock_parse_credentials_file)
+    monkeypatch.setattr(lib.jira, 'query_jira', mock_fail_query_jira)
 
     def mock_post(url, headers, data):
         # Simulate a failed response (HTTP 500)
@@ -85,7 +85,7 @@ mock_reponse_data_success = {
 # Test case for successful API response
 def test_query_jira_success(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
-    monkeypatch.setattr(lib.get_issues, 'parse_credentials_file', mock_parse_credentials_file)
+    monkeypatch.setattr(lib.jira, 'parse_credentials_file', mock_parse_credentials_file)
 
     def mock_post(url, headers, data):
         # Simulate a successful response (HTTP 200)

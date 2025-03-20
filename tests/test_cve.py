@@ -1,6 +1,6 @@
 import pytest
 import subprocess
-from lib.get_cve import git_log_titles
+from lib.cve import git_log_titles
 
 mock_list_titles_1 = [
     "Add memory requirements",
