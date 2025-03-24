@@ -44,11 +44,20 @@ Example of credentials file:
 
 Example execution:
 ```
-$ python lib/get_issues.py <tenant/managed> \
+$ python lib/jira.py <tenant/managed> \
   --url https://issues.redhat.com
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1'
   --credentials-file /path/to/credentials.json
-["KONFLUX-1", "KONFLUX-2", "KONFLUX-3", ...]
+
+{
+  "issues": {
+    "fixed": [
+      { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+      { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+    ]
+  }
+}
+
 ```
 
 ### CVE
@@ -59,7 +68,7 @@ The script returns the entries which inclue ^fix(CVE-XXX) in the git logs commit
 
 Example execution:
 ```
-$python lib/get_cve.py <tenant/managed> \
+$python lib/cve.py <tenant/managed> \
   --git https://github.com/konflux-ci/konflux-ci.git
   --branch main
 {
