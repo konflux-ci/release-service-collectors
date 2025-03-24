@@ -33,6 +33,8 @@ def search_issues():
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
     parser.add_argument('-c', '--credentials-file', help='Path to credentials file', required=True)
+    parser.add_argument('-r', '--release', help='Path to current Release json file', required=True)
+    parser.add_argument('-p', '--previousRelease', help='Path to previous Release json file', required=True)
     args = vars(parser.parse_args())
 
     if (not os.path.isfile(args['credentials_file'])):
