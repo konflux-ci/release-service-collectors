@@ -24,6 +24,8 @@ def main(argv):
     )
     parser.add_argument("--git", required=True, help="SSH clone string for a git repository")
     parser.add_argument("--branch", required=True, help="Branch name to be cloned, it can be a branch or a SHA.")
+    parser.add_argument('-r', '--release', help='Path to current Release json file', required=True)
+    parser.add_argument('-p', '--previousRelease', help='Path to previous Release json file', required=True)
     parser.add_argument(
         "--path",
         required=True,
