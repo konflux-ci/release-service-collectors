@@ -62,7 +62,12 @@ Example execution:
 $python lib/get_cve.py <tenant/managed> \
   --git https://github.com/konflux-ci/konflux-ci.git
   --branch main
-["fix(CVE-3444): test1", "fix(CVE-3445): test2"]
+{
+    "cves":  [
+         { "key": "CVE-3444", "component": "my-component" },
+         { "key": "CVE-3445", "component": "my-component" }
+    ]
+}
 ```
 
 

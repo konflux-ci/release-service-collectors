@@ -15,7 +15,7 @@ import tempfile
 import re
 import subprocess
 
-pattern = r'^fix\(CVE-'
+pattern = r'CVE-\d+-\d+|CVE-\d+'
 
 
 def find_cve():
@@ -27,7 +27,8 @@ def find_cve():
     parser.add_argument("--git", required=True, help="SSH clone string for a git repository")
     parser.add_argument("--branch", required=True, help="Branch name to be cloned, it can be a branch or a SHA.")
     args = vars(parser.parse_args())
-    return git_log_titles(args['git'], args['branch'])
+    cves = git_log_titles(args['git'], args['branch'])
+    return create_json_record(cves, "my-component")
 
 
 def git_log_titles(git_url, branch):
@@ -43,7 +44,7 @@ def git_log_titles(git_url, branch):
 
     os.chdir(tmpdir)
 
-    git_cmd = ["git", "log", "--pretty=format:%s:"]
+    git_cmd = ["git", "log", "--oneline"]
     result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
     if result.returncode != 0:
         print("Something went wrong clonning, details below:")
@@ -51,17 +52,29 @@ def git_log_titles(git_url, branch):
         print(f"Stdout: '{result.stdout}'")
         print(f"Stderr: '{result.stderr}'")
         exit(result.returncode)
-    list_of_commit_titles = result.stdout.splitlines()
-    return find_log_titles(list_of_commit_titles)
+    return find_log_titles(result.stdout)
 
 
 def find_log_titles(commit_titles):
     matching_titles = []
-    for title in commit_titles:
-        if re.match(pattern, title):
-            matching_titles.append(title)
+    matching_titles = re.findall(pattern, commit_titles)
     return matching_titles
 
+
+def create_json_record(cves, component):
+    """
+    {
+        "cves":  [
+            { "key": "CVE-3444", "component": "my-component" },
+            { "key": "CVE-3445", "component": "my-component" }
+        ]
+    }
+    """
+    data = {
+        "cves": 
+             [{ "key": cve, "component": component }  for cve in cves]
+    }                         
+    return data
 
 if __name__ == "__main__":
     print(find_cve())
