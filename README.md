@@ -63,15 +63,18 @@ $ python lib/jira.py <tenant/managed> \
 
 ### CVE
 
-The CVE collector works by running the command against a git repository branch.
-It requires a git repository and a branch.
-The script returns the entries which inclue ^fix(CVE-XXX) in the git logs commites.
+The CVE collector works by running the command against a git repository.
+It requires 2 files currentRelease json file and previousRelease json file.
+The script retreive all the components from the currentRelease.
+It checks what CVEs where added to the git log between the current to previous release.
+and retrun all the relevant CVEs per component
 
 Example execution:
 ```
 $python lib/cve.py <tenant/managed> \
-  --git https://github.com/konflux-ci/konflux-ci.git
-  --branch main
+  --release release.json \
+  --previousRelease previous_release.json
+
 {
     "cves":  [
          { "key": "CVE-3444", "component": "my-component" },
