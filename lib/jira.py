@@ -3,8 +3,10 @@
 python lib/get_issue.py \
     tenant \
      --url https://issues.redhat.com \
-    --query 'project = KONFLUX AND status = "NEW"' \
-     --credentials-file ../cred-file.json
+     --query 'project = KONFLUX AND status = "NEW"' \
+     --credentials-file ../cred-file.json \
+     --release release.json \
+     --previousRelease previous_release.json 
 
 output:
 {
@@ -33,6 +35,8 @@ def search_issues():
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
     parser.add_argument('-c', '--credentials-file', help='Path to credentials file', required=True)
+    parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=False)
+    parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
     if (not os.path.isfile(args['credentials_file'])):

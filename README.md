@@ -45,10 +45,11 @@ Example of credentials file:
 Example execution:
 ```
 $ python lib/jira.py <tenant/managed> \
-  --url https://issues.redhat.com
-  --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1'
-  --credentials-file /path/to/credentials.json
-
+  --url https://issues.redhat.com \
+  --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
+  --credentials-file /path/to/credentials.json \
+  --release release.json \
+  --previousRelease previous_release.json 
 {
   "issues": {
     "fixed": [
