@@ -83,6 +83,30 @@ $python lib/cve.py <tenant/managed> \
 }
 ```
 
+### Convert YAML to JASON
+
+This script gets a yaml file with jinja2 code and convert to json data.
+This script doesn't run the jinja2 to render values.
+
+Example execution:
+```
+python lib/convertyaml.py \
+    tenant \
+    --git https://gitlab.cee.redhat.com/gnecasov/container-errata-templates.git \
+    --branch main \
+    --path RHEL/XXXXX.yaml \
+    --release release.json \
+    --previousRelease previous_release.json 
+
+
+{
+  "synopsis": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n", 
+  "solution": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
+  "description": "{{Problem_description}}\n"
+}
+
+```
+
 
 ## Tests
 
