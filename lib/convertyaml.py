@@ -67,7 +67,8 @@ def convert_yaml_to_json(yaml_file):
     try:
         with open(yaml_file, 'r') as yaml_in:
             yaml_data = yaml.safe_load(yaml_in)
-        return json.dumps(yaml_data)
+        new_data = { "releaseNotes": yaml_data }
+        return json.dumps(new_data)
     except yaml.YAMLError as e:
         print(f"ERROR: Invalid YAML format: {e}")
         exit(1)

@@ -14,10 +14,10 @@ description: |
   {{Problem_description}}
 """
 
-expected_mock_json = {"synopsis": 
+expected_mock_json = { "releaseNotes": { "synopsis": 
     "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
     "solution": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
-    "description": "{{Problem_description}}\n"}
+    "description": "{{Problem_description}}\n"}}
 
 
 def test_yaml_file_to_json_valid(tmp_path):

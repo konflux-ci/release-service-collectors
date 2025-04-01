@@ -51,11 +51,13 @@ $ python lib/jira.py <tenant/managed> \
   --release release.json \
   --previousRelease previous_release.json 
 {
-  "issues": {
-    "fixed": [
-      { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-      { "id": "CPAAS-5678", "source": "issues.redhat.com" }
-    ]
+  "releaseNotes": {
+    "issues": {
+      "fixed": [
+        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+      ]
+    }
   }
 }
 
@@ -76,10 +78,12 @@ $python lib/cve.py <tenant/managed> \
   --previousRelease previous_release.json
 
 {
-    "cves":  [
-         { "key": "CVE-3444", "component": "my-component" },
-         { "key": "CVE-3445", "component": "my-component" }
-    ]
+    "releaseNotes": {
+        "cves":  [
+             { "key": "CVE-3444", "component": "my-component" },
+             { "key": "CVE-3445", "component": "my-component" }
+        ]
+    }
 }
 ```
 
@@ -99,10 +103,12 @@ python lib/convertyaml.py \
     --previousRelease previous_release.json 
 
 
-{
-  "synopsis": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n", 
-  "solution": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
-  "description": "{{Problem_description}}\n"
+{ "releaseNotes":
+    {
+        "synopsis": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n", 
+        "solution": "{% if advisory.spec.type == \"RHSA\" %} RHSA {% endif %}\n",
+        "description": "{{Problem_description}}\n"
+    }
 }
 
 ```

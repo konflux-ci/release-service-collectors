@@ -10,11 +10,13 @@ python lib/get_issue.py \
 
 output:
 {
-  "issues": {
-    "fixed": [
-      { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-      { "id": "CPAAS-5678", "source": "issues.redhat.com" }
-    ]
+  "releaseNotes": {
+    "issues": {
+      "fixed": [
+        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+      ]
+    }
   }
 }
 """
@@ -50,19 +52,23 @@ def search_issues():
 def create_json_record(issues, url):
     """
     {
-        "issues": {
+      "releaseNotes": {
+         "issues": {
             "fixed": [
                { "id": "CPAAS-1234", "source": "issues.redhat.com" },
                { "id": "CPAAS-5678", "source": "issues.redhat.com" }
             ]
-        }
+         }
+      }
     }
     """
     data = {
-        "issues": {
+      "releaseNotes": {
+         "issues": {
             "fixed": 
                 [{ "id": issue, "source": url }  for issue in issues]
-        }
+         }
+      }
     }                         
     #return json.dumps(data)
     return data

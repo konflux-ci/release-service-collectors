@@ -140,24 +140,26 @@ def create_cves_record(cves):
     }
     Output:
     {
-        "cves":  [
-            { "key": "CVE-1", "component": "comp1" },
-            { "key": "CVE-3", "component": "comp1" },
-            { "key": "CVE-2", "component": "comp2" },
-            { "key": "CVE-4", "component": "comp2" },
-        ]
+        "releaseNotes": {
+            "cves":  [
+                { "key": "CVE-1", "component": "comp1" },
+                { "key": "CVE-3", "component": "comp1" },
+                { "key": "CVE-2", "component": "comp2" },
+                { "key": "CVE-4", "component": "comp2" },
+            ]
+        }
     }
     or empty when no cves
-    {'cves': []}
+    {"releaseNotes": {"cves": []}}
     """
 
-    result = {"cves": []}
+    result = {"releaseNotes": {"cves": []}}
     
     if cves:
     
         for comp_name, keys in cves.items():
             for key in keys:
-                result["cves"].append({
+                result["releaseNotes"]["cves"].append({
                     "key": key,
                     "component": comp_name
                 })

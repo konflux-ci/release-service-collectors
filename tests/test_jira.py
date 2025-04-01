@@ -75,12 +75,11 @@ def test_query_jira_failure(monkeypatch):
 
 
 mock_reponse_data_success = {
-                'issues': [
-                    {"key": "KONFLUX-1"},
-                    {"key": "KONFLUX-2"}
-                ]
-            }
-
+       'issues': [
+          {"key": "KONFLUX-1"},
+          {"key": "KONFLUX-2"}
+       ]
+}
 
 # Test case for successful API response
 def test_query_jira_success(monkeypatch):

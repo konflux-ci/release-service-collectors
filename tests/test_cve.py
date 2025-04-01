@@ -8,16 +8,19 @@ mock_input =  {
     'comp2': ['CVE-2', 'CVE-4']
 }
 mock_result_good = {
+    "releaseNotes": {
         "cves":  [
             { "key": "CVE-1", "component": "comp1" },
             { "key": "CVE-3", "component": "comp1" },
             { "key": "CVE-2", "component": "comp2" },
             { "key": "CVE-4", "component": "comp2" },
         ]
-    }
+     }
+}
 
 mock_reponse_data_empty = []
-mock_cve_result_empty = {'cves': []}
+mock_cve_result_empty = {"releaseNotes": {"cves": []}}
+# mock_cve_result_empty = {'cves': []}
 
 
 mock_list_titles_1 = [
