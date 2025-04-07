@@ -32,13 +32,23 @@ $ python lib/template.py <tenant/managed> \
 ### Jira Issues
 
 The Jira collector works by running a JQL (Jira Query Language) query against a Jira instance. It
-requires a JSON file with a key called `api_token` that contains an API token to authenticate
+requires a k8s secret defined on the cluster. This secret should reside in the same namespace as the Release.
+It should contain a key called `api_token` that holds the API token to authenticate
 against the Jira instance. The script returns a hardcoded amount of 50 results maximum.
 
-Example of credentials file:
+Example of k8s secret:
 ```
 {
-    "api_token": "some_token"
+  "kind": "Secret",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "jira-collectors-secret",
+    "namespace": "dev-release-team-tenant",
+  },
+  "data": {
+    "apitoken": "c2NvdHRvCg=="
+  },
+  "type": "Opaque"
 }
 ```
 
@@ -47,7 +57,7 @@ Example execution:
 $ python lib/jira.py <tenant/managed> \
   --url https://issues.redhat.com \
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
-  --credentials-file /path/to/credentials.json \
+  --secretName jira-collectors-secret \
   --release release.json \
   --previousRelease previous_release.json 
 {

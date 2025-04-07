@@ -6,7 +6,7 @@ python lib/get_issue.py \
      --query 'project = KONFLUX AND status = "NEW"' \
      --credentials-file ../cred-file.json \
      --release release.json \
-     --previousRelease previous_release.json 
+     --previousRelease previous_release.json
 
 output:
 {
@@ -22,9 +22,43 @@ output:
 """
 
 import argparse
+import base64
 import json
 import os
+import sys
+import subprocess
 import requests
+
+
+def read_json(file_name):
+    if os.path.getsize(file_name) > 0:
+        with open(file_name, 'r') as f:
+            data = json.load(f)
+        return data
+    else:
+        print(f"Error: Empty file {file_name}")
+        exit(1)
+
+
+def get_release_namespace(data_release):
+    if "namespace" not in data_release['metadata']:
+        print("Error: resource does not contain the '.metadata.namespace' key")
+        exit(1)
+
+    return data_release['metadata']['namespace']
+
+
+def get_namespace_from_release(release_json_file):
+
+    data_release = read_json(release_json_file)
+
+    if not data_release:
+        log(f"Empty release file {release_json_file}")
+        exit(0)
+
+    ns = get_release_namespace(data_release)
+    log(f"Namespace extracted from file {release_json_file}: {ns}")
+    return ns
 
 
 def search_issues():
@@ -36,18 +70,23 @@ def search_issues():
     )
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
-    parser.add_argument('-c', '--credentials-file', help='Path to credentials file', required=True)
-    parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=False)
+    parser.add_argument('-s', '--secretName', help='Name of k8s secret that holds JIRA credentials with an apitoken key', required=True)
+    parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=True)
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
-    if (not os.path.isfile(args['credentials_file'])):
-        print(f"ERROR: Path to credentials file {args['credentials_file']} doesn't exists")
-        exit(1)
+    namespace = get_namespace_from_release(args['release'])
+    credentials = get_secret_data(namespace, args['secretName'])
 
-    issues =  query_jira(args['url'], args['query'], args['credentials_file'])
+    issues =  query_jira(args['url'], args['query'], credentials)
 
-    return create_json_record(issues, args['url'])
+    # source needs to not have the https:// prefix
+    return create_json_record(issues, args['url'].replace("https://",""))
+
+
+def log(message):
+    print(message, file=sys.stderr)
+
 
 def create_json_record(issues, url):
     """
@@ -65,31 +104,39 @@ def create_json_record(issues, url):
     data = {
       "releaseNotes": {
          "issues": {
-            "fixed": 
+            "fixed":
                 [{ "id": issue, "source": url }  for issue in issues]
          }
       }
-    }                         
-    #return json.dumps(data)
-    return data
-    
-
-def parse_credentials_file(credentials_file):
-    """
-    format credentials file:
-    {
-         "api_token": "token_id"
     }
-    """
-    # Open and read the JSON file
-    with open(credentials_file, 'r') as file:
-        data = json.load(file)
     return data
 
 
-def query_jira(jira_domain_url, jql_query, credentials_file):
-    credentials = parse_credentials_file(credentials_file)
-    api_token = credentials["api_token"]
+def get_secret_data(namespace, secret_name):
+    log(f"Getting secret: {secret_name}")
+    cmd = ["kubectl", "get", "secret", secret_name, "-n", namespace, "-ojson"]
+    try:
+        cmd_str = " ".join(cmd)
+        log(f"Running '{cmd_str}'")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        log(f"Command '{cmd_str}' failed, check exception for details")
+        raise
+    except Exception as exc:
+        log(f"Warning: Unknown error occurred when running command '{cmd_str}'")
+        raise RuntimeError from exc
+
+    secret_data = json.loads(result.stdout)
+    if "apitoken" not in secret_data["data"]:
+        print("Error: secret does not contain the 'apitoken' key")
+        exit(1)
+
+    secret = secret_data["data"]["apitoken"]
+
+    return base64.b64decode(secret).decode("utf-8")
+
+
+def query_jira(jira_domain_url, jql_query, api_token):
 
     # Define the endpoint URL
     url = f'{jira_domain_url}/rest/api/2/search'
