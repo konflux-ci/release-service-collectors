@@ -3,24 +3,15 @@ import subprocess
 from lib.cve import create_cves_record
 from lib.cve import git_log_titles_per_component
 
-mock_input =  {
-    'comp1': ['CVE-1', 'CVE-3'], 
-    'comp2': ['CVE-2', 'CVE-4']
-}
-mock_result_good = {
-    "releaseNotes": {
-        "cves":  [
-            { "key": "CVE-1", "component": "comp1" },
-            { "key": "CVE-3", "component": "comp1" },
-            { "key": "CVE-2", "component": "comp2" },
-            { "key": "CVE-4", "component": "comp2" },
-        ]
-     }
-}
+mock_input =  {'comp1': ['CVE-1', 'CVE-3'],'comp2': ['CVE-2', 'CVE-4']}
+mock_result_good = {"releaseNotes": {"cves": [{"key": "CVE-1", "component": "comp1"},
+                                              {"key": "CVE-3", "component": "comp1"},
+                                              {"key": "CVE-2", "component": "comp2"},
+                                              {"key": "CVE-4", "component": "comp2"}]}
+                    }
 
 mock_reponse_data_empty = []
 mock_cve_result_empty = {"releaseNotes": {"cves": []}}
-# mock_cve_result_empty = {'cves': []}
 
 
 mock_list_titles_1 = [
@@ -79,4 +70,3 @@ def test_create_json_record(monkeypatch):
 def test_create_json_empty_record(monkeypatch):
     res = create_cves_record(mock_reponse_data_empty)
     assert res == mock_cve_result_empty
-
