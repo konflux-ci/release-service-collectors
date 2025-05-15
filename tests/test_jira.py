@@ -5,7 +5,7 @@ import subprocess
 from collections import namedtuple
 
 import lib.jira
-from lib.jira import query_jira, get_namespace_from_release, get_secret_data
+from lib.jira import query_jira, get_namespace_from_release, get_secret_data, create_json_record
 
 
 MockResponse = namedtuple('MockResponse', ['status_code', 'json'])
@@ -93,11 +93,27 @@ def test_query_jira_failure(monkeypatch):
 
 mock_reponse_data_success = {
        'issues': [
-          {"key": "KONFLUX-1"},
-          {"key": "KONFLUX-2"}
+          {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_12324749': 'CVE-1234'}},
+          {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_12324749': 'CVE-2324'}}
        ]
 }
 
+mock_query_reuslt_data_success = [
+    {'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
+    {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
+]
+
+
+expected_result = {
+    "releaseNotes": {
+        "issues": {
+            "fixed": [
+                { "id": "KONFLUX-1", "source": "mock-domain.com", "summary": "summary 1", "cveid": "CVE-1234" },
+                { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary 2", "cveid": "CVE-2324" }             
+            ]
+        }
+    }
+}
 # Test case for successful API response
 def test_query_jira_success(monkeypatch):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
@@ -110,5 +126,15 @@ def test_query_jira_success(monkeypatch):
     monkeypatch.setattr(requests, 'post', mock_post)
 
     result = query_jira("https://mock-domain.com", "project = TEST", "abcdef")
+    assert result == [{'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
+                      {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
+                     ]
 
-    assert result == ["KONFLUX-1", "KONFLUX-2"]
+
+# Test create json record
+def test_create_json_record(monkeypatch):
+    monkeypatch.setattr(os.path, 'isfile', mock_isfile)
+    monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
+
+    result = create_json_record(mock_query_reuslt_data_success, "mock-domain.com")
+    assert result == expected_result

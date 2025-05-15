@@ -39,13 +39,12 @@ $ python lib/jira.py <tenant/managed> \
   "releaseNotes": {
     "issues": {
       "fixed": [
-        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+        { "id": "CPAAS-1234", "source": "issues.redhat.com", "summary": "summary 1..", "cveid": "CVE-2345" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com", "summary": "summary 2..", "cveid": "CVE-2349" }
       ]
     }
   }
 }
-
 ```
 
 ### CVE

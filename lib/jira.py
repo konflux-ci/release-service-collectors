@@ -1,20 +1,19 @@
 #!/usr/bin/env python
 """
-python lib/get_issue.py \
-    tenant \
-     --url https://issues.redhat.com \
-     --query 'project = KONFLUX AND status = "NEW"' \
-     --credentials-file ../cred-file.json \
-     --release release.json \
-     --previousRelease previous_release.json
+$ python lib/jira.py <tenant/managed> \
+  --url https://issues.redhat.com \
+  --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
+  --secretName jira-collectors-secret \
+  --release release.json \
+  --previousRelease previous_release.json 
 
 output:
 {
   "releaseNotes": {
     "issues": {
       "fixed": [
-        { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-        { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+        { "id": "CPAAS-1234", "source": "issues.redhat.com", "summary": "summary 1..", "cveid": "CVE-2345" },
+        { "id": "CPAAS-5678", "source": "issues.redhat.com", "summary": "summary 2..", "cveid": "CVE-2349" }
       ]
     }
   }
@@ -101,13 +100,23 @@ def create_json_record(issues, url):
       }
     }
     """
+
+    fixed_issues = [
+        {
+            "id": item.get('key'),
+            "source": url,
+            "summary": item.get('summary'),
+            "cveid": item.get('cveid')  if item.get('cveid') else None
+        }
+        for item in issues
+    ]
+
     data = {
-      "releaseNotes": {
-         "issues": {
-            "fixed":
-                [{ "id": issue, "source": url }  for issue in issues]
-         }
-      }
+        "releaseNotes": {
+            "issues": {
+                "fixed": fixed_issues
+            }
+        }
     }
     return data
 
@@ -146,7 +155,11 @@ def query_jira(jira_domain_url, jql_query, api_token):
     # 'project = "KONFLUX" AND status = "To Do"'
     start_at = 0
     max_results = 50
-    fields = ['summary', 'status', 'assignee']
+    # according to jira fileds customfield_12324749 represents the cve id field
+    # for more info you can see in the fields api
+    # https://issues.redhat.com/rest/api/2/field
+    # "id": "customfield_12324749", "name": "CVE ID"
+    fields = ['summary', 'status', 'assignee', 'customfield_12324749']
 
     # Construct the JSON payload
     data = {
@@ -173,7 +186,7 @@ def query_jira(jira_domain_url, jql_query, api_token):
     if response.status_code == 200:
         issues = response.json()['issues']
         for issue in issues:
-            list_issues.append(issue["key"])
+            list_issues.append({"key": issue["key"], "summary": issue["fields"].get("summary"), "cveid": issue["fields"].get("customfield_12324749")} )
     else:
         print(f"ERROR: Failed to retrieve data. HTTP Status Code: {response.status_code}")
         exit(1)
