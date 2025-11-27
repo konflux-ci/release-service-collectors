@@ -8,12 +8,15 @@ python lib/cve.py \
 
 
 import argparse
+import base64
 import os
 import tempfile
 import re
 import subprocess
 import json
 import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
 pattern = r'CVE-\d+-\d+|CVE-\d+'
 
@@ -26,6 +29,7 @@ def find_cve():
             help="Mode in which the script is called. It does not have any impact for this script.")
     parser.add_argument('-r', '--release', help='Path to current release file', required=True)
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file', required=True)
+    parser.add_argument('--secretName', help="Secret name to use for SSH authentication", required=False)
     args = vars(parser.parse_args())
 
     if not os.path.isfile(args['release']):
@@ -36,8 +40,22 @@ def find_cve():
         file_not_exists = 1
     if file_not_exists:
         exit(1)
+    
+    secret_data = {}
+    if args['secretName']:
+        namespace = json.loads(Path(args['release']).read_text())['metadata']['namespace']
+        secret_data = get_secret_data(namespace, args['secretName'])
 
-    return components_info(args['release'], args['previousRelease'])
+    return components_info(args['release'], args['previousRelease'], secret_data)
+
+
+def get_secret_data(namespace, secret):
+    log(f"Getting secret: {secret}") 
+    cmd = ["kubectl", "get", "secret", secret, "-n", namespace, "-ojson"]
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+    secret_data = json.loads(result.stdout)
+    return secret_data["data"]
 
 
 def read_json(file):
@@ -88,8 +106,8 @@ def get_component_detail(data_list, component):
 
 def get_snapshot_data(namespace, snapshot):
     cmd = ["kubectl", "get", "snapshot", snapshot, "-n", namespace, "-ojson"]
+    cmd_str = " ".join(cmd)
     try:
-        cmd_str = " ".join(cmd)
         log(f"Running {cmd_str}")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError:
@@ -133,7 +151,7 @@ def get_snapshot_namespace(data_release):
         exit(1)
 
 
-def components_info(release, previousRelease):
+def components_info(release, previousRelease, secret_data):
     prev_component_list = []
     cves = {}
     data_release = read_json(release)
@@ -166,18 +184,31 @@ def components_info(release, previousRelease):
             (url_prev, revision_prev) = get_component_detail(prev_component_list, component)
             log(f"url_prev: {url_prev}")
             log(f"revision_prev: {revision_prev}")
-            cves[component] = git_log_titles_per_component(url_current, revision_current, revision_prev)
+            cves[component] = git_log_titles_per_component(url_current, revision_current, revision_prev, secret_data)
         else:
-            cves[component] = git_log_titles_per_component(url_current, revision_current, "")
+            cves[component] = git_log_titles_per_component(url_current, revision_current, "", secret_data)
     return create_cves_record(cves)
 
 
-def git_log_titles_per_component(git_url, revision_current, revision_prev):
+def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data):
     tmpdir = tempfile.mkdtemp()
+    git_env = os.environ.copy()
     git_cmd = ["git", "clone", git_url, tmpdir]
+
+    if git_url in secret_data:
+        git_parts = urlparse(git_url)
+        # git_parts.path starts with `/` so we remove it using `[1:]``
+        git_cmd = ["git", "clone", f"git@{git_parts.netloc}:{git_parts.path[1:]}", tmpdir]
+        
+        priv_key = base64.standard_b64decode(secret_data[git_url])
+        fd = tempfile.TemporaryFile()
+        fd.write(priv_key)
+        os.chmod(fd.name, 0o600)
+        git_env["GIT_SSH_COMMAND"] = f"ssh -i {fd.name} -o IdentitiesOnly=yes"
+        
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
-    result = subprocess.run(git_cmd, check=True, capture_output=True, text=True)
+    result = subprocess.run(git_cmd, check=False, capture_output=True, text=True, env=git_env)
     if result.returncode != 0:
         log("Something went wrong during the git operation, details below:")
         log(f"Command: '{' '.join(git_cmd)}'")

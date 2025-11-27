@@ -71,6 +71,33 @@ $python lib/cve.py <tenant/managed> \
 }
 ```
 
+The CVE collector supports private repositories. First you need to specify a
+`--secretName` referencing a Kubernetes secret. The secret should
+be in the following form:
+
+```
+{
+  "kind": "Secret",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "cve-collectors-secret",
+    "namespace": "dev-release-team-tenant",
+  },
+  "data": {
+    "https://gitlab.com/my-group/my-repo": "c2NvdHRvCg==",
+    ...
+  },
+  "type": "Opaque"
+}
+```
+
+Each key on the secret should have a private key as value. If a key matches
+a repository listed in the snapshot related with the release, the private key
+is used for cloning the repository. The URL used for
+cloning with SSH is derived from the HTTPS URL of the repository, so
+`https://gitlab.com/my-group/my-repo` becomes `git@gitlab.com:my-group/my-repo`.
+The private key is passed using the environment variable `GIT_SSH_COMMAND`.
+
 ### Convert YAML to JASON
 
 This script gets a yaml file with jinja2 code and convert to json data.
