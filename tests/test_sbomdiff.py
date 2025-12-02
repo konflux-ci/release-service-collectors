@@ -341,15 +341,8 @@ def test_download_sbom_for_image_invalid_json(monkeypatch):
 def test_compare_component_sboms_success(monkeypatch, tmp_path):
     """Test successful SBOM comparison."""
     class MockVulnerabilityDiffer:
-        def __init__(self, previous_sbom, next_sbom, scanner):
+        def __init__(self, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
-            self.vulnerabilities_diff_all_info = [{"id": "CVE-2024-1234", "severity": "HIGH"}]
-
-        def scan_sboms(self):
-            pass
-
-        def diff_vulnerabilities(self):
-            pass
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
@@ -358,9 +351,8 @@ def test_compare_component_sboms_success(monkeypatch, tmp_path):
 
     result = compare_component_sboms("test-component", sbom1, sbom2)
 
-    assert "vulnerabilities_removed" in result
-    assert "vulnerabilities_removed_details" in result
-    assert result["vulnerabilities_removed"] == ["CVE-2024-1234"]
+    assert isinstance(result, list)
+    assert result == ["CVE-2024-1234"]
 
 
 # Tests for process_component function
@@ -392,15 +384,17 @@ def test_process_component_invalid_current_image(monkeypatch):
     assert "no containerImage" in result["reason"]
 
 
+@pytest.mark.skipif(lib.sbomdiff.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_current_sbom_download_failure(monkeypatch):
-    """Test processing component when current SBOM download fails."""
+    """Test processing component when current SBOM download fails (SBOM mode only)."""
     class MockCmdRunner:
         def run_cosign(self, args):
             raise subprocess.CalledProcessError(1, ["cosign"], stderr="Error")
 
     current_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
+    previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v0"}
 
-    result = process_component("test-component", current_comp, None, MockCmdRunner())
+    result = process_component("test-component", current_comp, previous_comp, MockCmdRunner())
 
     assert result["status"] == "error"
     assert "failed to download current SBOM" in result["reason"]
@@ -413,15 +407,8 @@ def test_process_component_compared_success(monkeypatch):
             return json.dumps(mock_sbom_data)
 
     class MockVulnerabilityDiffer:
-        def __init__(self, previous_sbom, next_sbom, scanner):
+        def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = []
-            self.vulnerabilities_diff_all_info = []
-
-        def scan_sboms(self):
-            pass
-
-        def diff_vulnerabilities(self):
-            pass
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
@@ -436,8 +423,9 @@ def test_process_component_compared_success(monkeypatch):
     assert "vulnerabilities_removed" in result
 
 
+@pytest.mark.skipif(lib.sbomdiff.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_previous_sbom_download_failure(monkeypatch):
-    """Test processing component when previous SBOM download fails."""
+    """Test processing component when previous SBOM download fails (SBOM mode only)."""
     call_count = [0]
 
     class MockCmdRunner:
@@ -466,14 +454,12 @@ def test_process_component_comparison_exception(monkeypatch):
             return json.dumps(mock_sbom_data)
 
     class MockVulnerabilityDiffer:
-        def __init__(self, previous_sbom, next_sbom, scanner):
+        def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             pass
 
-        def scan_sboms(self):
+        @property
+        def vulnerabilities_diff(self):
             raise Exception("Trivy scan failed")
-
-        def diff_vulnerabilities(self):
-            pass
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
@@ -571,9 +557,9 @@ def test_compare_releases_first_release(monkeypatch, tmp_path):
     result = compare_releases(MockCmdRunner())
 
     assert "releaseNotes" in result
-    assert "sbomDiff" in result["releaseNotes"]
-    assert "comp1" in result["releaseNotes"]["sbomDiff"]
-    assert result["releaseNotes"]["sbomDiff"]["comp1"]["status"] == "new"
+    assert "cves" in result["releaseNotes"]
+    assert isinstance(result["releaseNotes"]["cves"], list)
+    assert result["releaseNotes"]["cves"] == []  # First release has no removed CVEs
 
 
 def test_compare_releases_no_components_in_current(monkeypatch, tmp_path):
@@ -660,15 +646,8 @@ def test_compare_releases_success(monkeypatch, tmp_path):
             return json.dumps(mock_sbom_data)
 
     class MockVulnerabilityDiffer:
-        def __init__(self, previous_sbom, next_sbom, scanner):
+        def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
-            self.vulnerabilities_diff_all_info = [{"id": "CVE-2024-1234"}]
-
-        def scan_sboms(self):
-            pass
-
-        def diff_vulnerabilities(self):
-            pass
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
     monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/trivy')
@@ -676,9 +655,10 @@ def test_compare_releases_success(monkeypatch, tmp_path):
     result = compare_releases(MockCmdRunner())
 
     assert "releaseNotes" in result
-    assert "sbomDiff" in result["releaseNotes"]
-    assert "comp1" in result["releaseNotes"]["sbomDiff"]
-    assert result["releaseNotes"]["sbomDiff"]["comp1"]["status"] == "compared"
+    assert "cves" in result["releaseNotes"]
+    assert isinstance(result["releaseNotes"]["cves"], list)
+    assert len(result["releaseNotes"]["cves"]) == 1
+    assert result["releaseNotes"]["cves"][0] == {"key": "CVE-2024-1234", "component": "comp1"}
 
 
 def test_compare_releases_with_mode_argument(monkeypatch, tmp_path):
@@ -717,7 +697,9 @@ def test_compare_releases_with_mode_argument(monkeypatch, tmp_path):
     result = compare_releases(MockCmdRunner())
 
     assert "releaseNotes" in result
-    assert "sbomDiff" in result["releaseNotes"]
+    assert "cves" in result["releaseNotes"]
+    assert isinstance(result["releaseNotes"]["cves"], list)
+    assert result["releaseNotes"]["cves"] == []  # First release has no removed CVEs
 
 
 def test_compare_releases_missing_trivy(monkeypatch, tmp_path):

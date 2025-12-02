@@ -2,10 +2,13 @@
 """
 SBOM Diff Collector for Release Service
 
-This script compares Software Bill of Materials (SBOMs) between consecutive releases
-to identify changes in vulnerabilities. It retrieves container images from Kubernetes
-snapshots, downloads their SBOMs using cosign, and uses Trivy + diffused-lib to
-analyze vulnerability differences.
+This script compares vulnerabilities between consecutive releases to identify
+removed vulnerabilities. It retrieves container images from Kubernetes snapshots
+and uses Trivy + diffused-lib to analyze vulnerability differences.
+
+Scan Modes (controlled by SCAN_TYPE constant):
+    - "image": Scans container images directly using Trivy (default)
+    - "sbom": Downloads SBOMs using cosign and scans them
 
 Usage:
     python lib/sbomdiff.py --release release.json --previousRelease previous_release.json
@@ -20,26 +23,23 @@ Arguments:
 Output Format:
     {
         "releaseNotes": {
-            "sbomDiff": {
-                "component-name": {
-                    "status": "compared",  # or "new" or "error"
-                    "vulnerabilities_removed": [...],
-                    "vulnerabilities_removed_details": [...],
-                    "current_image": "registry/image:tag@sha256:...",
-                    "previous_image": "registry/image:tag@sha256:..."
-                }
-            }
+            "cves": [
+                { "key": "CVE-2024-1234", "component": "component-name" },
+                { "key": "CVE-2024-5678", "component": "component-name" }
+            ]
         }
     }
 
-Status values:
-    - "compared": Successfully compared SBOMs between releases
-    - "new": Component is new in this release (no previous version)
-    - "error": Failed to process component (see "reason" field)
+    Or when no CVEs are found:
+    {"releaseNotes": {"cves": []}}
+
+Notes:
+    - Only CVEs from successfully compared components are included
+    - New components and errors are logged but don't produce CVE entries
 
 Dependencies:
     - kubectl: Must be available in PATH and configured with cluster access
-    - cosign: Must be available in PATH for downloading SBOMs
+    - cosign: Must be available in PATH for downloading SBOMs (only in "sbom" mode)
     - trivy: Must be pre-installed in the container image
     - diffused-lib: Must be pre-installed in the container image
 
@@ -49,7 +49,7 @@ Example:
         --previousRelease /path/to/previous-release.json
 
 Exit Codes:
-    0 - Success: SBOM comparison completed successfully
+    0 - Success: Comparison completed successfully
     1 - Expected error: Invalid input, missing files, or known failure conditions
     2 - Unexpected error: Unhandled exception occurred (includes stack trace)
 """
@@ -64,6 +64,9 @@ import tempfile
 from typing import Optional, Dict, Any, List
 
 from diffused.differ import VulnerabilityDiffer  # type: ignore[import-untyped]
+
+# Scan type: "sbom" to download and scan SBOMs via cosign, "image" to scan images directly
+SCAN_TYPE = "image"
 
 
 def log(message: str) -> None:
@@ -242,11 +245,14 @@ def download_sbom_for_image(container_image: str, cmd_runner: Optional[ExternalC
     return None
 
 
-def compare_component_sboms(component_name: str, sbom_current: Dict[str, Any], sbom_previous: Dict[str, Any]) -> Dict[str, Any]:
+def compare_component_sboms(component_name: str, sbom_current: Dict[str, Any], sbom_previous: Dict[str, Any]) -> List[str]:
     """
     Compare two SBOMs using diffused-lib to identify removed vulnerabilities.
 
     Creates temporary files to store SBOMs, which are automatically cleaned up.
+
+    Returns:
+        List of CVE IDs that were removed (present in previous but not in current).
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         current_path = os.path.join(tmpdir, 'current_sbom.json')
@@ -262,15 +268,32 @@ def compare_component_sboms(component_name: str, sbom_current: Dict[str, Any], s
         differ = VulnerabilityDiffer(
             previous_sbom=previous_path,
             next_sbom=current_path,
-            scanner='trivy'
+            scanner='trivy',
+            scan_type='sbom'
         )
-        differ.scan_sboms()
-        differ.diff_vulnerabilities()
 
-        return {
-            "vulnerabilities_removed": differ.vulnerabilities_diff,
-            "vulnerabilities_removed_details": differ.vulnerabilities_diff_all_info
-        }
+        return differ.vulnerabilities_diff
+
+
+def compare_component_images(component_name: str, current_image: str, previous_image: str) -> List[str]:
+    """
+    Compare two container images using diffused-lib to identify removed vulnerabilities.
+
+    Scans images directly without requiring pre-downloaded SBOMs.
+
+    Returns:
+        List of CVE IDs that were removed (present in previous but not in current).
+    """
+    log(f"Comparing images for component {component_name} using diffused-lib")
+
+    differ = VulnerabilityDiffer(
+        previous_image=previous_image,
+        next_image=current_image,
+        scanner='trivy',
+        scan_type='image'
+    )
+
+    return differ.vulnerabilities_diff
 
 
 def process_component(
@@ -293,56 +316,86 @@ def process_component(
 
     log(f"Processing component: {comp_name}")
 
-    # Download SBOM for current component
-    current_sbom = download_sbom_for_image(current_image, cmd_runner)
-    if not current_sbom:
-        log(f"WARNING: Could not download SBOM for current component {comp_name}")
-        return {
-            "status": "error",
-            "reason": "failed to download current SBOM",
-            "current_image": current_image
-        }
-
     # Handle new component (no previous version)
     if not previous_comp:
         log(f"Component {comp_name} is new in this release")
         return {"status": "new", "current_image": current_image}
 
-    # Validate and process previous component
+    # Validate previous component
     previous_image = previous_comp.get('containerImage')
     validation_error = validate_container_image(previous_image, comp_name, "previous release")
     if validation_error:
         # If previous image is invalid, treat component as new
         return {"status": "new", "current_image": current_image}
 
-    # Download SBOM for previous component
-    previous_sbom = download_sbom_for_image(previous_image, cmd_runner)
-    if not previous_sbom:
-        log(f"WARNING: Could not download SBOM for previous component {comp_name}")
-        return {
-            "status": "error",
-            "reason": "failed to download previous SBOM",
-            "current_image": current_image,
-            "previous_image": previous_image
-        }
+    # Branch based on scan type
+    vulnerabilities_removed: List[str] = []
+    if SCAN_TYPE == "image":
+        # Image mode: scan images directly
+        try:
+            vulnerabilities_removed = compare_component_images(comp_name, current_image, previous_image)
+        except Exception as e:
+            log(f"ERROR: Failed to compare images for component {comp_name}: {e}")
+            return {
+                "status": "error",
+                "reason": f"image comparison failed: {str(e)}"
+            }
+    else:
+        # SBOM mode: download SBOMs and compare
+        current_sbom = download_sbom_for_image(current_image, cmd_runner)
+        if not current_sbom:
+            log(f"WARNING: Could not download SBOM for current component {comp_name}")
+            return {
+                "status": "error",
+                "reason": "failed to download current SBOM",
+                "current_image": current_image,
+                "previous_image": previous_image
+            }
 
-    # Compare the two SBOMs
-    try:
-        diff_result = compare_component_sboms(comp_name, current_sbom, previous_sbom)
-        return {
-            **diff_result,
-            "status": "compared",
-            "current_image": current_image,
-            "previous_image": previous_image
-        }
-    except Exception as e:
-        log(f"ERROR: Failed to compare SBOMs for component {comp_name}: {e}")
-        return {
-            "status": "error",
-            "reason": f"comparison failed: {str(e)}",
-            "current_image": current_image,
-            "previous_image": previous_image
-        }
+        previous_sbom = download_sbom_for_image(previous_image, cmd_runner)
+        if not previous_sbom:
+            log(f"WARNING: Could not download SBOM for previous component {comp_name}")
+            return {
+                "status": "error",
+                "reason": "failed to download previous SBOM",
+                "current_image": current_image,
+                "previous_image": previous_image
+            }
+
+        try:
+            vulnerabilities_removed = compare_component_sboms(comp_name, current_sbom, previous_sbom)
+        except Exception as e:
+            log(f"ERROR: Failed to compare SBOMs for component {comp_name}: {e}")
+            return {
+                "status": "error",
+                "reason": f"comparison failed: {str(e)}"
+            }
+
+    return {
+        "status": "compared",
+        "vulnerabilities_removed": vulnerabilities_removed,
+        "current_image": current_image,
+        "previous_image": previous_image
+    }
+
+
+def create_cves_record(cves: Dict[str, List[str]]) -> Dict[str, Any]:
+    """
+    Convert component CVE data to releaseNotes format.
+
+    Input: {'comp1': ['CVE-1', 'CVE-3'], 'comp2': ['CVE-2']}
+    Output: {"releaseNotes": {"cves": [{"key": "CVE-1", "component": "comp1"}, ...]}}
+    """
+    result: Dict[str, Any] = {"releaseNotes": {"cves": []}}
+
+    for comp_name, keys in cves.items():
+        for key in keys:
+            result["releaseNotes"]["cves"].append({
+                "key": key,
+                "component": comp_name
+            })
+
+    return result
 
 
 def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str, Any]:
@@ -366,19 +419,13 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
         --previousRelease, -p: Path to previous release JSON file
 
     Returns:
-        dict: Structured diff results in the format:
+        dict: Structured CVE results in the format:
             {
                 "releaseNotes": {
-                    "sbomDiff": {
-                        "component-name": {
-                            "status": "compared|new|error",
-                            "vulnerabilities_removed": [...],  # only if status=="compared"
-                            "vulnerabilities_removed_details": [...],  # only if status=="compared"
-                            "current_image": "...",
-                            "previous_image": "...",  # only if status=="compared" or previous image exists
-                            "reason": "..."  # only if status=="error"
-                        }
-                    }
+                    "cves": [
+                        {"key": "CVE-2024-1234", "component": "component-name"},
+                        {"key": "CVE-2024-5678", "component": "component-name"}
+                    ]
                 }
             }
 
@@ -389,12 +436,9 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
         subprocess.CalledProcessError: If kubectl or cosign commands fail
 
     Special Cases:
-        - If previousRelease is empty, treats all components as new (first release)
-        - All components are included in output, even if they fail processing
-        - Components are marked with appropriate status:
-            * "compared": Successfully compared with previous release
-            * "new": Component didn't exist in previous release
-            * "error": Failed to process (missing image, download failed, comparison failed)
+        - If previousRelease is empty, returns empty CVE list (first release)
+        - Only CVEs from successfully compared components are included
+        - New components and errors are logged but don't produce CVE entries
         - Processing continues for all components even if some fail
     """
     if cmd_runner is None:
@@ -432,11 +476,10 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
         log(f"Empty previous release file {args.previousRelease} - this is the first release")
         # Get components from current release and mark them all as new
         current_components = get_components_from_snapshot(snapshot_ns, snapshot_name, cmd_runner)
-        component_diffs = {}
         for current_comp in current_components:
             comp_name = current_comp['name']
-            component_diffs[comp_name] = process_component(comp_name, current_comp, None, cmd_runner)
-        return {"releaseNotes": {"sbomDiff": component_diffs}}
+            log(f"Component {comp_name} is new in this release")
+        return create_cves_record({})
 
     snapshot_prev_name = get_snapshot_name(data_prev_release)
     snapshot_prev_ns = get_snapshot_namespace(data_prev_release)
@@ -466,21 +509,33 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
         raise RuntimeError("Trivy is not available. Please ensure it is pre-installed in the container image.")
 
     # Compare SBOMs for each component
-    component_diffs = {}
+    cves: Dict[str, List[str]] = {}
 
     for current_comp in current_components:
         comp_name = current_comp['name']
         previous_comp = previous_components_map.get(comp_name)
-        component_diffs[comp_name] = process_component(comp_name, current_comp, previous_comp, cmd_runner)
+        result = process_component(comp_name, current_comp, previous_comp, cmd_runner)
 
-    return {"releaseNotes": {"sbomDiff": component_diffs}}
+        # Log status for non-compared components
+        if result.get("status") == "error":
+            log(f"Error processing {comp_name}: {result.get('reason', 'unknown')}")
+        elif result.get("status") == "new":
+            log(f"Component {comp_name} is new in this release")
+
+        # Only collect vulnerabilities_removed for compared components
+        if result.get("status") == "compared":
+            vulnerabilities = result.get("vulnerabilities_removed", [])
+            if vulnerabilities:
+                cves[comp_name] = vulnerabilities
+
+    return create_cves_record(cves)
 
 
 if __name__ == "__main__":
     try:
         result = compare_releases()
         print(json.dumps(result))
-        log("Completed comparing SBOMs")
+        log("Completed comparing releases")
         exit(0)
     except (ValueError, FileNotFoundError, RuntimeError) as e:
         log(f"ERROR: {e}")
