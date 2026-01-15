@@ -4,11 +4,11 @@ SBOM Diff Collector for Release Service
 
 This script compares vulnerabilities between consecutive releases to identify
 removed vulnerabilities. It retrieves container images from Kubernetes snapshots
-and uses Trivy + diffused-lib to analyze vulnerability differences.
+and uses ACS (Advanced Cluster Security) + diffused-lib to analyze vulnerability differences.
 
 Scan Modes (controlled by SCAN_TYPE constant):
-    - "image": Scans container images directly using Trivy (default)
-    - "sbom": Downloads SBOMs using cosign and scans them
+    - "image": Scans container images directly using ACS (default)
+    - "sbom": Downloads SBOMs using cosign and scans them (ACS SBOM support coming soon)
 
 Usage:
     python lib/sbomdiff.py --release release.json --previousRelease previous_release.json
@@ -40,7 +40,7 @@ Notes:
 Dependencies:
     - kubectl: Must be available in PATH and configured with cluster access
     - cosign: Must be available in PATH for downloading SBOMs (only in "sbom" mode)
-    - trivy: Must be pre-installed in the container image
+    - roxctl: Must be pre-installed in the container image (ACS CLI)
     - diffused-lib: Must be pre-installed in the container image
 
 Example:
@@ -78,7 +78,7 @@ class ExternalCommands:
     """
     Wrapper for external command execution.
 
-    This class encapsulates all external command calls (kubectl, cosign, trivy)
+    This class encapsulates all external command calls (kubectl, cosign)
     to make the code testable by allowing these dependencies to be mocked.
     """
 
@@ -268,7 +268,7 @@ def compare_component_sboms(component_name: str, sbom_current: Dict[str, Any], s
         differ = VulnerabilityDiffer(
             previous_sbom=previous_path,
             next_sbom=current_path,
-            scanner='trivy',
+            scanner='acs',
             scan_type='sbom'
         )
 
@@ -289,7 +289,7 @@ def compare_component_images(component_name: str, current_image: str, previous_i
     differ = VulnerabilityDiffer(
         previous_image=previous_image,
         next_image=current_image,
-        scanner='trivy',
+        scanner='acs',
         scan_type='image'
     )
 
@@ -406,8 +406,8 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
     1. Parses command-line arguments
     2. Validates input files exist
     3. Retrieves snapshot information from Kubernetes
-    4. Downloads SBOMs for all components using cosign
-    5. Compares SBOMs using Trivy and diffused-lib
+    4. Downloads SBOMs for all components using cosign (in SBOM mode)
+    5. Compares vulnerabilities using ACS and diffused-lib
     6. Returns structured results
 
     Args:
@@ -504,9 +504,9 @@ def compare_releases(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str,
     log(f"Found {len(current_components)} components in current release")
     log(f"Found {len(previous_components)} components in previous release")
 
-    # Verify trivy is available
-    if not shutil.which("trivy"):
-        raise RuntimeError("Trivy is not available. Please ensure it is pre-installed in the container image.")
+    # Verify roxctl is available
+    if not shutil.which("roxctl"):
+        raise RuntimeError("roxctl is not available. Please ensure it is pre-installed in the container image.")
 
     # Compare SBOMs for each component
     cves: Dict[str, List[str]] = {}

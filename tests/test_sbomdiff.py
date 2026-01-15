@@ -459,7 +459,7 @@ def test_process_component_comparison_exception(monkeypatch):
 
         @property
         def vulnerabilities_diff(self):
-            raise Exception("Trivy scan failed")
+            raise Exception("ACS scan failed")
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
@@ -589,7 +589,7 @@ def test_compare_releases_no_components_in_current(monkeypatch, tmp_path):
         def run_kubectl(self, args):
             return json.dumps({"spec": {}})  # No components
 
-    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/trivy')
+    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     with pytest.raises(ValueError, match="No components found in current release"):
         compare_releases(MockCmdRunner())
@@ -650,7 +650,7 @@ def test_compare_releases_success(monkeypatch, tmp_path):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
 
     monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
-    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/trivy')
+    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     result = compare_releases(MockCmdRunner())
 
@@ -702,8 +702,8 @@ def test_compare_releases_with_mode_argument(monkeypatch, tmp_path):
     assert result["releaseNotes"]["cves"] == []  # First release has no removed CVEs
 
 
-def test_compare_releases_missing_trivy(monkeypatch, tmp_path):
-    """Test that missing trivy raises RuntimeError."""
+def test_compare_releases_missing_roxctl(monkeypatch, tmp_path):
+    """Test that missing roxctl raises RuntimeError."""
     release_file = tmp_path / 'release.json'
     prev_file = tmp_path / 'prev.json'
 
@@ -735,9 +735,9 @@ def test_compare_releases_missing_trivy(monkeypatch, tmp_path):
                 }
             })
 
-    monkeypatch.setattr('shutil.which', lambda x: None)  # Trivy not found
+    monkeypatch.setattr('shutil.which', lambda x: None)  # roxctl not found
 
-    with pytest.raises(RuntimeError, match="Trivy is not available"):
+    with pytest.raises(RuntimeError, match="roxctl is not available"):
         compare_releases(MockCmdRunner())
 
 
