@@ -27,6 +27,7 @@ import os
 import sys
 import subprocess
 import requests
+from jinja2 import Template, UndefinedError, StrictUndefined
 
 
 def read_json(file_name):
@@ -47,17 +48,31 @@ def get_release_namespace(data_release):
     return data_release['metadata']['namespace']
 
 
-def get_namespace_from_release(release_json_file):
+def interpolate_query(query, release_data):
+    """
+    Render Jinja2 template variables in the query using Release CR data.
 
-    data_release = read_json(release_json_file)
+    Example:
+        query: 'fixVersion = "{{ spec.data.version }}"'
+        release_data: {"spec": {"data": {"version": "2.1.1"}}}
+        result: 'fixVersion = "2.1.1"'
 
-    if not data_release:
-        log(f"Empty release file {release_json_file}")
-        exit(0)
-
-    ns = get_release_namespace(data_release)
-    log(f"Namespace extracted from file {release_json_file}: {ns}")
-    return ns
+    Raises:
+        SystemExit: If template variable is undefined or template rendering fails.
+    """
+    try:
+        template = Template(query, undefined=StrictUndefined)
+        rendered = template.render(release_data)
+        return rendered
+    except UndefinedError as e:
+        print(f"Error: Template variable not found in Release CR: {e}")
+        print(f"Query: {query}")
+        print("Ensure the Release CR contains the required data in spec.data")
+        exit(1)
+    except Exception as e:
+        print(f"Error: Failed to render template: {e}")
+        print(f"Query: {query}")
+        exit(1)
 
 
 def search_issues():
@@ -74,10 +89,14 @@ def search_issues():
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
-    namespace = get_namespace_from_release(args['release'])
+    release_data = read_json(args['release'])
+    namespace = get_release_namespace(release_data)
     credentials = get_secret_data(namespace, args['secretName'])
 
-    issues =  query_jira(args['url'], args['query'], credentials)
+    interpolated_query = interpolate_query(args['query'], release_data)
+    log(f"Interpolated JQL: {interpolated_query}")
+
+    issues = query_jira(args['url'], interpolated_query, credentials)
 
     # source needs to not have the https:// prefix
     return create_json_record(issues, args['url'].replace("https://",""))
