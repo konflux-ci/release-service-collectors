@@ -71,3 +71,49 @@ def test_create_json_record(monkeypatch):
 def test_create_json_empty_record(monkeypatch):
     res = create_cves_record(mock_reponse_data_empty)
     assert res == mock_cve_result_empty
+
+def test_get_log_titles_per_component_with_replacement(monkeypatch):
+    git_url = "https://example.com/group/repository"
+    revision_current = "abc"
+    revision_prev = "def"
+    secret_data = {
+        "example.com/group/repository": "dG9rZW4K"
+    }
+
+    def mock_subprocess_run(cmd, check, capture_output, text, env={}):
+        if "clone" in cmd:
+            assert "git@" in " ".join(cmd)
+            assert "GIT_SSH_COMMAND" in env
+            return MockCompletedProcess(returncode=0, stdout="", stderr="")
+        if "log" in cmd:
+            assert revision_current in " ".join(cmd)
+            assert revision_prev in " ".join(cmd)
+            return MockCompletedProcess(returncode=0, stdout="CVE-1234 fixed", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data)
+    assert "CVE-1234" in titles
+
+def test_get_log_titles_per_component_with_no_replacement(monkeypatch):
+    git_url = "https://example.com/group/repository"
+    revision_current = "abc"
+    revision_prev = "def"
+    secret_data = {}
+
+    def mock_subprocess_run(cmd, check, capture_output, text, env={}):
+        if "clone" in cmd:
+            assert git_url in " ".join(cmd)
+            assert "GIT_SSH_COMMAND" not in env
+            return MockCompletedProcess(returncode=0, stdout="", stderr="")
+        if "log" in cmd:
+            assert revision_current in " ".join(cmd)
+            assert revision_prev in " ".join(cmd)
+            return MockCompletedProcess(returncode=0, stdout="CVE-1234 fixed", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data)
+    assert "CVE-1234" in titles
+
+

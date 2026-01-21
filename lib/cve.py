@@ -194,18 +194,19 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev, secre
     tmpdir = tempfile.mkdtemp()
     git_env = os.environ.copy()
     git_cmd = ["git", "clone", git_url, tmpdir]
+    git_parts = urlparse(git_url)
+    git_url_no_scheme = git_url.replace(f"{git_parts.scheme}://", "", 1)
 
-    if git_url in secret_data:
-        git_parts = urlparse(git_url)
+    if git_url_no_scheme in secret_data:
         # git_parts.path starts with `/` so we remove it using `[1:]``
         git_cmd = ["git", "clone", f"git@{git_parts.netloc}:{git_parts.path[1:]}", tmpdir]
-        
-        priv_key = base64.standard_b64decode(secret_data[git_url])
+
+        priv_key = base64.standard_b64decode(secret_data[git_url_no_scheme])
         fd = tempfile.TemporaryFile()
         fd.write(priv_key)
         os.chmod(fd.name, 0o600)
         git_env["GIT_SSH_COMMAND"] = f"ssh -i {fd.name} -o IdentitiesOnly=yes"
-        
+
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=False, capture_output=True, text=True, env=git_env)
