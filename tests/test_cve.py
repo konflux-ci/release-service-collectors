@@ -77,7 +77,7 @@ def test_get_log_titles_per_component_with_replacement(monkeypatch):
     revision_current = "abc"
     revision_prev = "def"
     secret_data = {
-        "example.com/group/repository": "dG9rZW4K"
+        "group.repository": "dG9rZW4K"
     }
 
     def mock_subprocess_run(cmd, check, capture_output, text, env={}):

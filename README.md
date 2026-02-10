@@ -84,7 +84,7 @@ be in the following form:
     "namespace": "dev-release-team-tenant",
   },
   "data": {
-    "gitlab.com/my-group/my-repo": "c2NvdHRvCg==",
+    "my-group.my-repo": "c2NvdHRvCg==",
     ...
   },
   "type": "Opaque"
@@ -95,7 +95,8 @@ Each key on the secret should have a private key as value. If a key matches
 a repository listed in the snapshot related with the release, the private key
 is used for cloning the repository. The comparison strips the scheme from the
 repositories listed on the snapshots. So to match the repository `https://gitlab.com/my-group/my-repo`
-you need to specify `gitlab.com/my-group/my-repo` on the Secret.
+you need to specify `my-group.my-repo` on the Secret. Note the dot (`.`) to separate
+the group from the repository.
 
 The URL used for
 cloning with SSH is derived from the HTTPS URL of the repository, so
