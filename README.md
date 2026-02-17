@@ -9,7 +9,7 @@ Collection of scripts run by the Collector Framework on the Release Service of K
 The Jira collector works by running a JQL (Jira Query Language) query against a Jira instance. It
 requires a k8s secret defined on the cluster. This secret should reside in the same namespace as the Release.
 It should contain a key called `api_token` that holds the API token to authenticate
-against the Jira instance. The script returns a hardcoded amount of 50 results maximum.
+against the Jira instance.
 
 Example of k8s secret:
 ```
@@ -33,6 +33,7 @@ $ python lib/jira.py <tenant/managed> \
   --url https://issues.redhat.com \
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
   --secretName jira-collectors-secret \
+  --limit 50 \
   --release release.json \
   --previousRelease previous_release.json 
 {

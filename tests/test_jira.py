@@ -65,7 +65,7 @@ def test_query_jira_empty_response(monkeypatch):
         return MockResponse(status_code=200, json=lambda: mock_reponse_data_empty)
 
     monkeypatch.setattr(requests, 'post', mock_post)
-    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef")
+    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
     assert result == []
 
 
@@ -88,7 +88,7 @@ def test_query_jira_failure(monkeypatch):
 
     monkeypatch.setattr(requests, 'post', mock_post)
     with pytest.raises(SystemExit):
-        query_jira("https://mock-domain.com", "project = TEST", "abcdef")
+        query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
 
 
 mock_reponse_data_success = {
@@ -141,7 +141,7 @@ def test_query_jira_success(monkeypatch, response_data, expected):
 
     monkeypatch.setattr(requests, 'post', mock_post)
 
-    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef")
+    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
     assert result == expected
 
 
