@@ -4,6 +4,7 @@ $ python lib/jira.py <tenant/managed> \
   --url https://issues.redhat.com \
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
   --secretName jira-collectors-secret \
+  --limit 50 \
   --release release.json \
   --previousRelease previous_release.json 
 
@@ -70,6 +71,7 @@ def search_issues():
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
     parser.add_argument('-s', '--secretName', help='Name of k8s secret that holds JIRA credentials with an apitoken key', required=True)
+    parser.add_argument('-l', '--limit', help='Limit of JIRA to retrieve', required=False, default=500)
     parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=True)
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
@@ -77,7 +79,7 @@ def search_issues():
     namespace = get_namespace_from_release(args['release'])
     credentials = get_secret_data(namespace, args['secretName'])
 
-    issues =  query_jira(args['url'], args['query'], credentials)
+    issues =  query_jira(args['url'], args['query'], credentials, int(args['limit']))
 
     # source needs to not have the https:// prefix
     return create_json_record(issues, args['url'].replace("https://",""))
@@ -145,7 +147,7 @@ def get_secret_data(namespace, secret_name):
     return base64.b64decode(secret).decode("utf-8")
 
 
-def query_jira(jira_domain_url, jql_query, api_token):
+def query_jira(jira_domain_url, jql_query, api_token, max_results):
 
     # Define the endpoint URL
     url = f'{jira_domain_url}/rest/api/2/search'
@@ -154,7 +156,6 @@ def query_jira(jira_domain_url, jql_query, api_token):
     # example of jql query:
     # 'project = "KONFLUX" AND status = "To Do"'
     start_at = 0
-    max_results = 50
     # according to jira fileds customfield_12324749 represents the cve id field
     # for more info you can see in the fields api
     # https://issues.redhat.com/rest/api/2/field
