@@ -52,9 +52,14 @@ $ python lib/jira.py <tenant/managed> \
 
 The CVE collector works by running the command against a git repository.
 It requires 2 files currentRelease json file and previousRelease json file.
-The script retreive all the components from the currentRelease.
-It checks what CVEs where added to the git log between the current to previous release.
-and retrun all the relevant CVEs per component
+The script retrieves all the components from the currentRelease.
+It checks what CVEs were added to the git log between the current to previous release
+and returns all the relevant CVEs per component.
+
+**Optimizations:**
+- Uses blobless clones (`--filter=blob:none`) to minimize memory and disk usage
+- Caches cloned repositories so components sharing the same git URL only clone once
+- Automatically cleans up temporary directories on exit
 
 Example execution:
 ```
@@ -103,6 +108,51 @@ The URL used for
 cloning with SSH is derived from the HTTPS URL of the repository, so
 `https://gitlab.com/my-group/my-repo` becomes `git@gitlab.com:my-group/my-repo`.
 The private key is passed using the environment variable `GIT_SSH_COMMAND`.
+
+### Single Component CVE
+
+The Single Component CVE collector is optimized for **monorepos** where many components
+share the same git repository. Instead of processing all components in the snapshot
+(which would clone the same repo multiple times), it only processes the single component
+that triggered the build.
+
+The component is identified via the Snapshot's labels:
+- `test.appstudio.openshift.io/type` must be `component`
+- `appstudio.openshift.io/component` contains the component name
+
+Additionally, it filters git log to only examine commits affecting the component's
+`source.git.context` subdirectory, avoiding false positives from CVE mentions in
+other components' commits.
+
+Example execution:
+```
+$ python lib/single-component-cve.py <tenant/managed> \
+  --release release.json \
+  --previousRelease previous_release.json
+
+{
+    "releaseNotes": {
+        "cves":  [
+             { "key": "CVE-3444", "component": "my-component" },
+             { "key": "CVE-3445", "component": "my-component" }
+        ]
+    }
+}
+```
+
+**When to use this collector vs the regular CVE collector:**
+- Use `single-component-cve` for monorepos with many components sharing the same git URL
+- Use `cve` for applications where each component has its own repository
+
+The `single-component-cve` collector uses blobless clones (`--filter=blob:none`) and
+caches cloned repositories, significantly reducing memory usage and execution time.
+
+If the Snapshot doesn't have the required labels (e.g., manually created snapshots),
+the collector returns an empty CVE list and logs a warning suggesting to use the
+regular `cve` collector instead.
+
+This collector supports the same `--secretName` option as the regular CVE collector
+for private repositories.
 
 ### Convert YAML to JASON
 
