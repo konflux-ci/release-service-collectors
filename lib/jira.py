@@ -1,9 +1,14 @@
 #!/usr/bin/env python
+# @ai-rules:
+# 1. [Pattern]: Uses Jira Cloud API v3 with Basic auth (email:token).
+# 2. [Constraint]: CVE ID field is customfield_10667 on Cloud.
+# 3. [Gotcha]: Fields param is comma-separated string, not JSON array.
 """
 $ python lib/jira.py <tenant/managed> \
-  --url https://issues.redhat.com \
+  --url https://redhat.atlassian.net \
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
   --secretName jira-collectors-secret \
+  --limit 50 \
   --release release.json \
   --previousRelease previous_release.json 
 
@@ -12,8 +17,8 @@ output:
   "releaseNotes": {
     "issues": {
       "fixed": [
-        { "id": "CPAAS-1234", "source": "issues.redhat.com", "summary": "summary 1..", "cveid": "CVE-2345" },
-        { "id": "CPAAS-5678", "source": "issues.redhat.com", "summary": "summary 2..", "cveid": "CVE-2349" }
+        { "id": "CPAAS-1234", "source": "redhat.atlassian.net", "summary": "summary 1..", "cveid": "CVE-2345" },
+        { "id": "CPAAS-5678", "source": "redhat.atlassian.net", "summary": "summary 2..", "cveid": "CVE-2349" }
       ]
     }
   }
@@ -69,15 +74,16 @@ def search_issues():
     )
     parser.add_argument('-u', '--url', help='URL to Jira', required=True)
     parser.add_argument('-q', '--query', help='Jira qrl query', required=True)
-    parser.add_argument('-s', '--secretName', help='Name of k8s secret that holds JIRA credentials with an apitoken key', required=True)
+    parser.add_argument('-s', '--secretName', help='Name of k8s secret that holds JIRA credentials with email and apitoken keys', required=True)
+    parser.add_argument('-l', '--limit', help='Limit of JIRA issues to retrieve', required=False, default=500)
     parser.add_argument('-r', '--release', help='Path to current release file. Not used, supported to align the interface.', required=True)
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
     namespace = get_namespace_from_release(args['release'])
-    credentials = get_secret_data(namespace, args['secretName'])
+    email, api_token = get_secret_data(namespace, args['secretName'])
 
-    issues =  query_jira(args['url'], args['query'], credentials)
+    issues = query_jira(args['url'], args['query'], email, api_token, int(args['limit']))
 
     # source needs to not have the https:// prefix
     return create_json_record(issues, args['url'].replace("https://",""))
@@ -93,8 +99,8 @@ def create_json_record(issues, url):
       "releaseNotes": {
          "issues": {
             "fixed": [
-               { "id": "CPAAS-1234", "source": "issues.redhat.com" },
-               { "id": "CPAAS-5678", "source": "issues.redhat.com" }
+               { "id": "CPAAS-1234", "source": "redhat.atlassian.net" },
+               { "id": "CPAAS-5678", "source": "redhat.atlassian.net" }
             ]
          }
       }
@@ -106,7 +112,7 @@ def create_json_record(issues, url):
             "id": item.get('key'),
             "source": url,
             "summary": item.get('summary'),
-            "cveid": item.get('cveid')  if item.get('cveid') else None
+            "cveid": item.get('cveid') if item.get('cveid') else None
         }
         for item in issues
     ]
@@ -122,6 +128,16 @@ def create_json_record(issues, url):
 
 
 def get_secret_data(namespace, secret_name):
+    """
+    Retrieve Jira Cloud credentials from a Kubernetes secret.
+    
+    The secret must contain:
+      - 'email': Service account email for Jira Cloud
+      - 'apitoken': API token generated at id.atlassian.com
+    
+    Returns:
+        tuple: (email, api_token) for Basic auth
+    """
     log(f"Getting secret: {secret_name}")
     cmd = ["kubectl", "get", "secret", secret_name, "-n", namespace, "-ojson"]
     try:
@@ -136,59 +152,60 @@ def get_secret_data(namespace, secret_name):
         raise RuntimeError from exc
 
     secret_data = json.loads(result.stdout)
+    
+    if "email" not in secret_data["data"]:
+        print("Error: secret does not contain the 'email' key")
+        exit(1)
     if "apitoken" not in secret_data["data"]:
         print("Error: secret does not contain the 'apitoken' key")
         exit(1)
 
-    secret = secret_data["data"]["apitoken"]
+    email = base64.b64decode(secret_data["data"]["email"]).decode("utf-8").strip()
+    api_token = base64.b64decode(secret_data["data"]["apitoken"]).decode("utf-8").strip()
 
-    return base64.b64decode(secret).decode("utf-8")
+    return (email, api_token)
 
 
-def query_jira(jira_domain_url, jql_query, api_token):
+def query_jira(jira_domain_url, jql_query, email, api_token, max_results):
+    """
+    Query Jira Cloud API v3 for issues matching the JQL query.
+    
+    Uses GET /rest/api/3/search/jql with Basic auth (email:token).
+    Cloud custom field for CVE ID: customfield_10667
+    """
+    # Strip trailing slash to avoid double-slash in URL
+    base_url = jira_domain_url.rstrip('/')
+    url = f'{base_url}/rest/api/3/search/jql'
 
-    # Define the endpoint URL
-    url = f'{jira_domain_url}/rest/api/2/search'
+    # Fields as comma-separated string (Cloud v3 requirement)
+    # customfield_10667 = CVE ID on Jira Cloud (was customfield_12324749 on Server)
+    fields = 'summary,status,assignee,customfield_10667'
 
-    # Define your JQL query and other parameters
-    # example of jql query:
-    # 'project = "KONFLUX" AND status = "To Do"'
-    start_at = 0
-    max_results = 50
-    # according to jira fileds customfield_12324749 represents the cve id field
-    # for more info you can see in the fields api
-    # https://issues.redhat.com/rest/api/2/field
-    # "id": "customfield_12324749", "name": "CVE ID"
-    fields = ['summary', 'status', 'assignee', 'customfield_12324749']
-
-    # Construct the JSON payload
-    data = {
+    params = {
         'jql': jql_query,
-        'startAt': start_at,
+        'startAt': 0,
         'maxResults': max_results,
         'fields': fields
     }
 
-    # Create the headers
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + api_token
-    }
-
-    response = requests.post(
+    response = requests.get(
         url,
-        headers=headers,
-        data=json.dumps(data),
+        params=params,
+        auth=(email, api_token),
     )
 
-    # Check the response
     list_issues = []
     if response.status_code == 200:
         issues = response.json()['issues']
         for issue in issues:
-            list_issues.append({"key": issue["key"], "summary": issue["fields"].get("summary"), "cveid": issue["fields"].get("customfield_12324749")} )
+            list_issues.append({
+                "key": issue["key"],
+                "summary": issue["fields"].get("summary"),
+                "cveid": issue["fields"].get("customfield_10667")
+            })
     else:
         print(f"ERROR: Failed to retrieve data. HTTP Status Code: {response.status_code}")
+        print(f"Response: {response.text}")
         exit(1)
 
     return list_issues
