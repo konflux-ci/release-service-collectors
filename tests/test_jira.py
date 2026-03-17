@@ -8,7 +8,7 @@ import lib.jira
 from lib.jira import query_jira, get_namespace_from_release, get_secret_data, create_json_record
 
 
-MockResponse = namedtuple('MockResponse', ['status_code', 'json'])
+MockResponse = namedtuple('MockResponse', ['status_code', 'json', 'text'])
 
 
 def mock_isfile(file):
@@ -42,14 +42,17 @@ def mock_get_namespace_from_release(release):
 
 
 def test_get_secret_data(monkeypatch):
+    # email: test@example.com (base64: dGVzdEBleGFtcGxlLmNvbQ==)
+    # apitoken: scotto (base64: c2NvdHRv)
     mock_secret_json = ('{"kind":"Secret","apiVersion":"v1","metadata":{"name":"jira-collectors-secret","namespace":'
                         '"dev-release-team-tenant","labels":{"konflux-ci.dev/collector":"jira-collector"}},'
-                        '"data":{"apitoken":"c2NvdHRvCg=="},"type":"Opaque"}')
+                        '"data":{"email":"dGVzdEBleGFtcGxlLmNvbQ==","apitoken":"c2NvdHRv"},"type":"Opaque"}')
     def mock_subprocess_run(cmd, check, capture_output=True, text=True):
         return MockCompletedProcess(returncode=0, stdout=mock_secret_json, stderr="")
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
-    result = get_secret_data("dev-release-team-tenant", "jira-collectors-secret")
-    assert result == "scotto\n"
+    email, api_token = get_secret_data("dev-release-team-tenant", "jira-collectors-secret")
+    assert email == "test@example.com"
+    assert api_token == "scotto"
 
 # empty response data
 mock_reponse_data_empty = {'issues': []}
@@ -60,12 +63,12 @@ def test_query_jira_empty_response(monkeypatch):
     monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
     monkeypatch.setattr(lib.jira, 'query_jira', mock_empty_query_jira)
 
-    def mock_post(url, headers, data):
+    def mock_get(url, params, auth):
         # Simulating a successful response with no issues (HTTP 200)
-        return MockResponse(status_code=200, json=lambda: mock_reponse_data_empty)
+        return MockResponse(status_code=200, json=lambda: mock_reponse_data_empty, text="")
 
-    monkeypatch.setattr(requests, 'post', mock_post)
-    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
+    monkeypatch.setattr(requests, 'get', mock_get)
+    result = query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", 50)
     assert result == []
 
 
@@ -82,19 +85,19 @@ def test_query_jira_failure(monkeypatch):
     monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
     monkeypatch.setattr(lib.jira, 'query_jira', mock_fail_query_jira)
 
-    def mock_post(url, headers, data):
+    def mock_get(url, params, auth):
         # Simulate a failed response (HTTP 500)
-        return MockResponse(status_code=500, json=lambda: mock_reponse_data_failure)
+        return MockResponse(status_code=500, json=lambda: mock_reponse_data_failure, text="Internal Server Error")
 
-    monkeypatch.setattr(requests, 'post', mock_post)
+    monkeypatch.setattr(requests, 'get', mock_get)
     with pytest.raises(SystemExit):
-        query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
+        query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", 50)
 
 
 mock_reponse_data_success = {
        'issues': [
-          {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_12324749': 'CVE-1234'}},
-          {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_12324749': 'CVE-2324'}}
+          {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_10667': 'CVE-1234'}},
+          {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_10667': 'CVE-2324'}}
        ]
 }
 
@@ -105,8 +108,8 @@ mock_reponse_data_success = {
         (
             {
                 'issues': [
-                    {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_12324749': 'CVE-1234'}},
-                    {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_12324749': 'CVE-2324'}}
+                    {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_10667': 'CVE-1234'}},
+                    {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_10667': 'CVE-2324'}}
                 ]
             },
             [
@@ -118,8 +121,8 @@ mock_reponse_data_success = {
         (
             {
                 'issues': [
-                    {"key": "KONFLUX-1", 'fields': {'summary': 'summary "1"', 'customfield_12324749': 'CVE-1234'}},
-                    {"key": "KONFLUX-2", 'fields': {'summary': 'summary "2"', 'customfield_12324749': 'CVE-2324'}}
+                    {"key": "KONFLUX-1", 'fields': {'summary': 'summary "1"', 'customfield_10667': 'CVE-1234'}},
+                    {"key": "KONFLUX-2", 'fields': {'summary': 'summary "2"', 'customfield_10667': 'CVE-2324'}}
                 ]
             },
             [
@@ -135,13 +138,13 @@ def test_query_jira_success(monkeypatch, response_data, expected):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
     monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
 
-    def mock_post(url, headers, data):
+    def mock_get(url, params, auth):
         # Simulate a successful response (HTTP 200)
-        return MockResponse(status_code=200, json=lambda: response_data)
+        return MockResponse(status_code=200, json=lambda: response_data, text="")
 
-    monkeypatch.setattr(requests, 'post', mock_post)
+    monkeypatch.setattr(requests, 'get', mock_get)
 
-    result = query_jira("https://mock-domain.com", "project = TEST", "abcdef", 50)
+    result = query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", 50)
     assert result == expected
 
 
