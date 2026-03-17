@@ -6,10 +6,12 @@ Collection of scripts run by the Collector Framework on the Release Service of K
 
 ### Jira Issues
 
-The Jira collector works by running a JQL (Jira Query Language) query against a Jira instance. It
+The Jira collector works by running a JQL (Jira Query Language) query against Jira Cloud. It
 requires a k8s secret defined on the cluster. This secret should reside in the same namespace as the Release.
-It should contain a key called `api_token` that holds the API token to authenticate
-against the Jira instance.
+
+The secret must contain:
+- `email`: Service account email for Jira Cloud authentication
+- `apitoken`: API token generated at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
 
 Example of k8s secret:
 ```
@@ -18,10 +20,11 @@ Example of k8s secret:
   "apiVersion": "v1",
   "metadata": {
     "name": "jira-collectors-secret",
-    "namespace": "dev-release-team-tenant",
+    "namespace": "dev-release-team-tenant"
   },
   "data": {
-    "apitoken": "c2NvdHRvCg=="
+    "email": "Y252LWNpLXJlbGVhc2UtZ3JvdXArY252LWRvd25zdHJlYW0tYm90QHJlZGhhdC5jb20=",
+    "apitoken": "QVRBVFQzeEZmR0YwVmpPUC4uLg=="
   },
   "type": "Opaque"
 }
@@ -30,7 +33,7 @@ Example of k8s secret:
 Example execution:
 ```
 $ python lib/jira.py <tenant/managed> \
-  --url https://issues.redhat.com \
+  --url https://redhat.atlassian.net \
   --query 'project = KONFLUX AND status = "NEW" AND fixVersion = CY25Q1' \
   --secretName jira-collectors-secret \
   --limit 50 \
@@ -40,8 +43,8 @@ $ python lib/jira.py <tenant/managed> \
   "releaseNotes": {
     "issues": {
       "fixed": [
-        { "id": "CPAAS-1234", "source": "issues.redhat.com", "summary": "summary 1..", "cveid": "CVE-2345" },
-        { "id": "CPAAS-5678", "source": "issues.redhat.com", "summary": "summary 2..", "cveid": "CVE-2349" }
+        { "id": "CPAAS-1234", "source": "redhat.atlassian.net", "summary": "summary 1..", "cveid": "CVE-2345" },
+        { "id": "CPAAS-5678", "source": "redhat.atlassian.net", "summary": "summary 2..", "cveid": "CVE-2349" }
       ]
     }
   }
