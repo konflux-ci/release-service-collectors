@@ -154,6 +154,50 @@ regular `cve` collector instead.
 This collector supports the same `--secretName` option as the regular CVE collector
 for private repositories.
 
+### Single Component Simple JIRA
+
+The Single Component Simple JIRA collector scans commit messages for JIRA issue keys
+and filters them by specified project key prefixes. This is useful when you want to
+extract JIRA references from commit messages without querying the JIRA API.
+
+The component is identified via the Snapshot's labels:
+- `test.appstudio.openshift.io/type` must be `component`
+- `appstudio.openshift.io/component` contains the component name
+
+Example execution:
+```
+$ python lib/single-component-simplejira.py <tenant/managed> \
+  --release release.json \
+  --previousRelease previous_release.json \
+  --jiraProjectKey HUM \
+  --jiraProjectKey ABC
+
+{
+    "releaseNotes": {
+        "issues":  [
+             { "key": "HUM-1234", "component": "my-component" },
+             { "key": "ABC-5678", "component": "my-component" }
+        ]
+    }
+}
+```
+
+**Parameters:**
+- `--jiraProjectKey`: JIRA project key prefix to filter issues. Can be specified multiple
+  times to include issues from multiple projects. For example, `--jiraProjectKey HUM`
+  will match `HUM-1234` but not `ABC-456`.
+
+**When to use this collector vs the regular Jira collector:**
+- Use `single-component-simplejira` when you want to extract JIRA issue keys directly
+  from commit messages without needing JIRA API access
+- Use `jira` when you need to run JQL queries against a JIRA instance to get issue details
+
+This collector supports the same `--secretName` option as the CVE collectors for
+private repositories.
+
+If the Snapshot doesn't have the required labels (e.g., manually created snapshots),
+the collector returns an empty issues list and logs a warning.
+
 ### Convert YAML to JASON
 
 This script gets a yaml file with jinja2 code and convert to json data.
