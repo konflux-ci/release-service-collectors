@@ -267,11 +267,15 @@ def single_component_info(release, previousRelease, secret_data, jira_project_ke
     if component in prev_component_names:
         prev_detail = get_component_detail(filtered_prev, component)
         if prev_detail:
-            url_prev, revision_prev, _ = prev_detail
+            url_prev, revision_prev, prev_context = prev_detail
             log(f"url_prev: {url_prev}")
             log(f"revision_prev: {revision_prev}")
+            # Use previous context as fallback if current context is missing
+            effective_context = context if context else prev_context
+            if effective_context and not context:
+                log(f"Using previous release context as fallback: {effective_context}")
             jira_issues[component] = git_log_jira_issues_per_component(
-                url_current, revision_current, revision_prev, secret_data, context, jira_project_keys
+                url_current, revision_current, revision_prev, secret_data, effective_context, jira_project_keys
             )
         else:
             jira_issues[component] = git_log_jira_issues_per_component(

@@ -335,3 +335,48 @@ def test_single_component_only_clones_once(monkeypatch):
     git_log_jira_issues_per_component(git_url, "rev1", "rev0", secret_data, None, jira_project_keys)
 
     assert clone_count == 1, f"Expected 1 clone for single component, but got {clone_count}"
+
+
+def test_context_fallback_from_previous_release(monkeypatch, tmp_path):
+    """Test that context from previous release is used when current context is missing.
+    
+    This tests the scenario where a component's current definition is missing
+    the context field but the previous release had it defined. The script
+    should fall back to using the previous release's context for filtering.
+    """
+    get_component_detail = single_component_simplejira.get_component_detail
+
+    # Current component missing context
+    current_components = [{
+        "name": "httpd-main",
+        "source": {
+            "git": {
+                "url": "https://example.com/monorepo",
+                "revision": "abc123"
+            }
+        }
+    }]
+
+    # Previous component has context
+    prev_components = [{
+        "name": "httpd-main",
+        "source": {
+            "git": {
+                "url": "https://example.com/monorepo",
+                "revision": "def456",
+                "context": "rpms/httpd"
+            }
+        }
+    }]
+
+    # Verify current component has no context
+    current_detail = get_component_detail(current_components, "httpd-main")
+    assert current_detail is not None
+    url_curr, rev_curr, ctx_curr = current_detail
+    assert ctx_curr is None, "Current component should have no context"
+
+    # Verify previous component has context
+    prev_detail = get_component_detail(prev_components, "httpd-main")
+    assert prev_detail is not None
+    url_prev, rev_prev, ctx_prev = prev_detail
+    assert ctx_prev == "rpms/httpd", "Previous component should have context"
