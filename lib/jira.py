@@ -10,11 +10,7 @@ $ python lib/jira.py <tenant/managed> \
   --secretName jira-collectors-secret \
   --limit 50 \
   --release release.json \
-<<<<<<< HEAD
   --previousRelease previous_release.json
-=======
-  --previousRelease previous_release.json
->>>>>>> main
 
 output:
 {

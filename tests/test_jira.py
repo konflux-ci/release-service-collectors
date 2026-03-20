@@ -113,26 +113,6 @@ def test_query_jira_failure(monkeypatch):
         )
     ]
 )
-
-
-mock_query_reuslt_data_success = [
-    {'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
-    {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
-]
-
-
-expected_result = {
-    "releaseNotes": {
-        "issues": {
-            "fixed": [
-                { "id": "KONFLUX-1", "source": "mock-domain.com", "summary": "summary 1", "cveid": "CVE-1234" },
-                { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary 2", "cveid": "CVE-2324" }
-            ]
-        }
-    }
-}
-
-
 # Test case for successful API response
 def test_query_jira_success(monkeypatch, response_data, expected):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
