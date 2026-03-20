@@ -96,12 +96,24 @@ def test_query_jira_failure(monkeypatch):
 
 
 # Cloud uses customfield_10667 for CVE ID (was customfield_12324749 on Server)
-mock_reponse_data_success = {
-       'issues': [
-          {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_10667': 'CVE-1234'}},
-          {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_10667': 'CVE-2324'}}
-       ]
-}
+@pytest.mark.parametrize(
+    'response_data,expected',
+    [
+        (
+            {
+                'issues': [
+                    {"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_10667': 'CVE-1234'}},
+                    {"key": "KONFLUX-2", 'fields': {'summary': 'summary 2', 'customfield_10667': 'CVE-2324'}}
+                ]
+            },
+            [
+                {'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
+                {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
+            ]
+        )
+    ]
+)
+
 
 mock_query_reuslt_data_success = [
     {'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
@@ -114,7 +126,7 @@ expected_result = {
         "issues": {
             "fixed": [
                 { "id": "KONFLUX-1", "source": "mock-domain.com", "summary": "summary 1", "cveid": "CVE-1234" },
-                { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary 2", "cveid": "CVE-2324" }             
+                { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary 2", "cveid": "CVE-2324" }
             ]
         }
     }
@@ -122,26 +134,59 @@ expected_result = {
 
 
 # Test case for successful API response
-def test_query_jira_success(monkeypatch):
+def test_query_jira_success(monkeypatch, response_data, expected):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
     monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
 
     def mock_get(url, params, auth):
         # Simulate a successful response (HTTP 200)
-        return MockResponse(status_code=200, json=lambda: mock_reponse_data_success, text="")
+        return MockResponse(status_code=200, json=lambda: response_data, text="")
 
     monkeypatch.setattr(requests, 'get', mock_get)
 
     result = query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", 50)
-    assert result == [{'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
-                      {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
-                     ]
+    assert result == expected
 
 
-# Test create json record
-def test_create_json_record(monkeypatch):
+
+@pytest.mark.parametrize(
+    "query_data,expected",
+    [
+        (
+            [{'key': 'KONFLUX-1', 'summary': 'summary 1', 'cveid': 'CVE-1234'},
+            {'key': 'KONFLUX-2', 'summary': 'summary 2', 'cveid': 'CVE-2324'}
+            ],
+            {
+            "releaseNotes": {
+                    "issues": {
+                        "fixed": [
+                            { "id": "KONFLUX-1", "source": "mock-domain.com", "summary": "summary 1", "cveid": "CVE-1234" },
+                            { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary 2", "cveid": "CVE-2324" }
+                        ]
+                }
+                }
+            }
+        ),
+        (
+            [{'key': 'KONFLUX-1', 'summary': 'summary \"1\"', 'cveid': 'CVE-1234'},
+            {'key': 'KONFLUX-2', 'summary': 'summary \"2\"', 'cveid': 'CVE-2324'}
+            ],
+            {
+            "releaseNotes": {
+                    "issues": {
+                        "fixed": [
+                            { "id": "KONFLUX-1", "source": "mock-domain.com", "summary": "summary \"1\"", "cveid": "CVE-1234" },
+                            { "id": "KONFLUX-2", "source": "mock-domain.com", "summary": "summary \"2\"", "cveid": "CVE-2324" }
+                        ]
+                }
+                }
+            }
+        ),
+    ],
+)
+def test_create_json_record(monkeypatch, query_data, expected ):
     monkeypatch.setattr(os.path, 'isfile', mock_isfile)
     monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
 
-    result = create_json_record(mock_query_reuslt_data_success, "mock-domain.com")
-    assert result == expected_result
+    result = create_json_record(query_data, "mock-domain.com")
+    assert result == expected

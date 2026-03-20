@@ -13,6 +13,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required for Codecov OIDC
 
     steps:
     - uses: actions/checkout@v4
@@ -32,4 +35,11 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude venv/
     - name: Test with pytest
       run: |
-        python -m pytest
+        python -m pytest --cov=lib --cov-report=xml:coverage.xml
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
+      with:
+        use_oidc: true
+        flags: unit-tests
+        files: coverage.xml
+        fail_ci_if_error: false

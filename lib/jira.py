@@ -10,7 +10,11 @@ $ python lib/jira.py <tenant/managed> \
   --secretName jira-collectors-secret \
   --limit 50 \
   --release release.json \
-  --previousRelease previous_release.json 
+<<<<<<< HEAD
+  --previousRelease previous_release.json
+=======
+  --previousRelease previous_release.json
+>>>>>>> main
 
 output:
 {
@@ -130,11 +134,11 @@ def create_json_record(issues, url):
 def get_secret_data(namespace, secret_name):
     """
     Retrieve Jira Cloud credentials from a Kubernetes secret.
-    
+
     The secret must contain:
       - 'email': Service account email for Jira Cloud
       - 'apitoken': API token generated at id.atlassian.com
-    
+
     Returns:
         tuple: (email, api_token) for Basic auth
     """
@@ -152,7 +156,7 @@ def get_secret_data(namespace, secret_name):
         raise RuntimeError from exc
 
     secret_data = json.loads(result.stdout)
-    
+
     if "email" not in secret_data["data"]:
         print("Error: secret does not contain the 'email' key")
         exit(1)
@@ -169,7 +173,7 @@ def get_secret_data(namespace, secret_name):
 def query_jira(jira_domain_url, jql_query, email, api_token, max_results):
     """
     Query Jira Cloud API v3 for issues matching the JQL query.
-    
+
     Uses GET /rest/api/3/search/jql with Basic auth (email:token).
     Cloud custom field for CVE ID: customfield_10667
     """

@@ -1,0 +1,18 @@
+codecov:
+  require_ci_to_pass: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "50...100"
+
+flags:
+  unit-tests:
+    carryforward: true
+  # Uncomment when you add integration tests:
+  # integration-tests:
+  #   carryforward: true
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
