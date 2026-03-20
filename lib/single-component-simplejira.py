@@ -14,7 +14,8 @@ Usage:
         --release release.json \
         --previousRelease previous_release.json \
         --jiraProjectKey HUM \
-        --jiraProjectKey ABC
+        --jiraProjectKey ABC \
+        --jiraServer issues.redhat.com
 """
 
 import argparse
@@ -74,6 +75,11 @@ def find_jira_issues():
         help="JIRA project key prefix to filter issues (e.g., 'HUM' to match 'HUM-1234'). Can be specified multiple times.",
         required=True
     )
+    parser.add_argument(
+        '--jiraServer',
+        help="JIRA server hostname (e.g., 'issues.redhat.com'). Included in output for issue tracking.",
+        required=True
+    )
     args = vars(parser.parse_args())
 
     if not os.path.isfile(args['release']):
@@ -91,7 +97,8 @@ def find_jira_issues():
         secret_data = get_secret_data(namespace, args['secretName'])
 
     jira_project_keys = args['jiraProjectKeys']
-    return single_component_info(args['release'], args['previousRelease'], secret_data, jira_project_keys)
+    jira_server = args['jiraServer']
+    return single_component_info(args['release'], args['previousRelease'], secret_data, jira_project_keys, jira_server)
 
 
 def get_secret_data(namespace, secret):
@@ -212,7 +219,7 @@ def get_single_component_from_snapshot(snapshot_data):
     return None
 
 
-def single_component_info(release, previousRelease, secret_data, jira_project_keys):
+def single_component_info(release, previousRelease, secret_data, jira_project_keys, jira_server):
     """Process JIRA issues for only the single component that triggered the build."""
     jira_issues = {}
     data_release = read_json(release)
@@ -233,7 +240,7 @@ def single_component_info(release, previousRelease, secret_data, jira_project_ke
         log("WARNING: Snapshot does not have single component labels.")
         log("Expected labels: test.appstudio.openshift.io/type=component and appstudio.openshift.io/component=<name>")
         log("Returning empty JIRA issues list.")
-        return create_jira_record({})
+        return create_jira_record({}, jira_server)
 
     log(f"Single component mode: processing only component '{single_component}'")
 
@@ -286,7 +293,7 @@ def single_component_info(release, previousRelease, secret_data, jira_project_ke
             url_current, revision_current, "", secret_data, context, jira_project_keys
         )
 
-    return create_jira_record(jira_issues)
+    return create_jira_record(jira_issues, jira_server)
 
 
 def clone_repo_if_needed(git_url, secret_data):
@@ -380,9 +387,9 @@ def find_jira_issues_in_text(text, jira_project_keys):
     return unique_matches
 
 
-def create_jira_record(jira_issues):
+def create_jira_record(jira_issues, jira_server):
     """
-    Input: jira_issues (dictionary)
+    Input: jira_issues (dictionary), jira_server (string)
     {
       'comp1': ['HUM-1234', 'HUM-5678'],
     }
@@ -391,8 +398,8 @@ def create_jira_record(jira_issues):
         "releaseNotes": {
             "issues": {
                 "fixed": [
-                    { "id": "HUM-1234", "component": "comp1" },
-                    { "id": "HUM-5678", "component": "comp1" },
+                    { "id": "HUM-1234", "component": "comp1", "server": "issues.redhat.com" },
+                    { "id": "HUM-5678", "component": "comp1", "server": "issues.redhat.com" },
                 ]
             }
         }
@@ -415,7 +422,8 @@ def create_jira_record(jira_issues):
             for key in keys:
                 result["releaseNotes"]["issues"]["fixed"].append({
                     "id": key,
-                    "component": comp_name
+                    "component": comp_name,
+                    "server": jira_server
                 })
 
     return result

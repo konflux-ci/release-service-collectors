@@ -170,14 +170,14 @@ def test_get_single_component_from_snapshot_no_labels():
 def test_create_jira_record_single_component():
     """Test JIRA record creation for a single component."""
     jira_issues = {'my-component': ['HUM-1234', 'HUM-5678']}
-    result = create_jira_record(jira_issues)
+    result = create_jira_record(jira_issues, "issues.redhat.com")
 
     expected = {
         "releaseNotes": {
             "issues": {
                 "fixed": [
-                    {"id": "HUM-1234", "component": "my-component"},
-                    {"id": "HUM-5678", "component": "my-component"},
+                    {"id": "HUM-1234", "component": "my-component", "server": "issues.redhat.com"},
+                    {"id": "HUM-5678", "component": "my-component", "server": "issues.redhat.com"},
                 ]
             }
         }
@@ -187,7 +187,7 @@ def test_create_jira_record_single_component():
 
 def test_create_jira_record_empty():
     """Test JIRA record creation with no issues."""
-    result = create_jira_record({})
+    result = create_jira_record({}, "issues.redhat.com")
     expected = {"releaseNotes": {"issues": {"fixed": []}}}
     assert result == expected
 
