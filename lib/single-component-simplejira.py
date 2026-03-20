@@ -389,19 +389,23 @@ def create_jira_record(jira_issues):
     Output:
     {
         "releaseNotes": {
-            "issues":  [
-                { "key": "HUM-1234", "component": "comp1" },
-                { "key": "HUM-5678", "component": "comp1" },
-            ]
+            "issues": {
+                "fixed": [
+                    { "id": "HUM-1234", "component": "comp1" },
+                    { "id": "HUM-5678", "component": "comp1" },
+                ]
+            }
         }
     }
     or empty when no issues
-    {"releaseNotes": {"issues": []}}
+    {"releaseNotes": {"issues": {"fixed": []}}}
     """
 
     result = {
         "releaseNotes": {
-            "issues": []
+            "issues": {
+                "fixed": []
+            }
         }
     }
 
@@ -409,8 +413,8 @@ def create_jira_record(jira_issues):
         log(f"Found JIRA issues: {jira_issues}")
         for comp_name, keys in jira_issues.items():
             for key in keys:
-                result["releaseNotes"]["issues"].append({
-                    "key": key,
+                result["releaseNotes"]["issues"]["fixed"].append({
+                    "id": key,
                     "component": comp_name
                 })
 

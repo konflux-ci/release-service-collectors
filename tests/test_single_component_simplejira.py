@@ -174,10 +174,12 @@ def test_create_jira_record_single_component():
 
     expected = {
         "releaseNotes": {
-            "issues": [
-                {"key": "HUM-1234", "component": "my-component"},
-                {"key": "HUM-5678", "component": "my-component"},
-            ]
+            "issues": {
+                "fixed": [
+                    {"id": "HUM-1234", "component": "my-component"},
+                    {"id": "HUM-5678", "component": "my-component"},
+                ]
+            }
         }
     }
     assert result == expected
@@ -186,7 +188,7 @@ def test_create_jira_record_single_component():
 def test_create_jira_record_empty():
     """Test JIRA record creation with no issues."""
     result = create_jira_record({})
-    expected = {"releaseNotes": {"issues": []}}
+    expected = {"releaseNotes": {"issues": {"fixed": []}}}
     assert result == expected
 
 
