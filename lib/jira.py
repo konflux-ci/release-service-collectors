@@ -172,6 +172,9 @@ def query_jira(jira_domain_url, jql_query, email, api_token, max_results):
 
     Uses GET /rest/api/3/search/jql with Basic auth (email:token).
     Cloud custom field for CVE ID: customfield_10667
+
+    Paginates using nextPageToken from the response until all results
+    are retrieved or max_results is reached.
     """
     # Strip trailing slash to avoid double-slash in URL
     base_url = jira_domain_url.rstrip('/')
@@ -181,32 +184,48 @@ def query_jira(jira_domain_url, jql_query, email, api_token, max_results):
     # customfield_10667 = CVE ID on Jira Cloud (was customfield_12324749 on Server)
     fields = 'summary,status,assignee,customfield_10667'
 
-    params = {
-        'jql': jql_query,
-        'startAt': 0,
-        'maxResults': max_results,
-        'fields': fields
-    }
-
-    response = requests.get(
-        url,
-        params=params,
-        auth=(email, api_token),
-    )
-
     list_issues = []
-    if response.status_code == 200:
-        issues = response.json()['issues']
-        for issue in issues:
+    next_page_token = None
+    while True:
+        params = {
+            'jql': jql_query,
+            'fields': fields
+        }
+        if next_page_token:
+            params['nextPageToken'] = next_page_token
+
+        response = requests.get(
+            url,
+            params=params,
+            auth=(email, api_token),
+        )
+
+        if response.status_code != 200:
+            print(f"ERROR: Failed to retrieve data. HTTP Status Code: {response.status_code}")
+            print(f"Response: {response.text}")
+            exit(1)
+
+        data = response.json()
+        for issue in data['issues']:
             list_issues.append({
                 "key": issue["key"],
                 "summary": issue["fields"].get("summary"),
                 "cveid": issue["fields"].get("customfield_10667")
             })
-    else:
-        print(f"ERROR: Failed to retrieve data. HTTP Status Code: {response.status_code}")
-        print(f"Response: {response.text}")
-        exit(1)
+
+        next_page_token = data.get('nextPageToken')
+        if not next_page_token:
+            break
+
+        if len(list_issues) >= max_results:
+            break
+
+        log(f"Fetched {len(list_issues)} issues so far, retrieving next page...")
+
+    log(f"Total issues fetched: {len(list_issues)}")
+    if len(list_issues) > max_results:
+        log(f"Trimmed issues to {max_results} as it was requested by the `--limit` parameter.")
+        list_issues = list_issues[:max_results]
 
     return list_issues
 

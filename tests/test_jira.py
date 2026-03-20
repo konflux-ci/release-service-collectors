@@ -127,6 +127,49 @@ def test_query_jira_success(monkeypatch, response_data, expected):
     result = query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", 50)
     assert result == expected
 
+@pytest.mark.parametrize(
+    'n_pages,n_issues_page,max_results,n_calls,n_results',
+    [
+        (1, 25, 10, 1, 10), # We want 10 results, we get returned 25
+        (1, 1, 10, 1, 1), # We want 10 results, but there is only one returned
+        (100, 100, 1, 1, 1), # There are a lot of pages, but we only want the first result
+        (10, 10, 100, 10, 100), # There are a lot of pages, and we want all of them
+        (10, 10, 75, 8, 75) # We want half a page for the last one
+    ]
+)
+def test_query_jira_pagination(monkeypatch, n_pages, n_issues_page, max_results, n_calls, n_results):
+    """Test that query_jira follows nextPageToken to fetch all pages.
+
+    The first two arguments control the generation of the return data: number of pages
+    and number of issues per page. The max_results represents the --limit parameter.
+    The n_results and n_calls are controls to check how many things got actually returned
+    from the function and how many times a call was issues to Jira.
+    """
+    monkeypatch.setattr(os.path, 'isfile', mock_isfile)
+    monkeypatch.setattr(lib.jira, 'get_namespace_from_release', mock_get_namespace_from_release)
+
+    pages = []
+    for page_n in range(n_pages):
+        page = {"issues": [], "nextPageToken": "abc"}
+        if page_n == n_pages - 1: # If this is the last page, delete the nextPageToken
+            del page["nextPageToken"]
+
+        for issues_per_page in range(n_issues_page):
+            page["issues"].append({"key": "KONFLUX-1", 'fields': {'summary': 'summary 1', 'customfield_10667': 'CVE-1234'}})
+        pages.append(page)
+
+    call_count = {'n': 0}
+    def mock_get(url, params, auth):
+        page = pages[call_count['n']]
+        call_count['n'] += 1
+        return MockResponse(status_code=200, json=lambda: page, text="")
+
+    monkeypatch.setattr(requests, 'get', mock_get)
+
+    result = query_jira("https://mock-domain.com", "project = TEST", "test@example.com", "abcdef", max_results)
+    assert len(result) == n_results
+    assert call_count['n'] == n_calls
+
 
 
 @pytest.mark.parametrize(
