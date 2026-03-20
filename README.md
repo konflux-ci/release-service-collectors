@@ -173,14 +173,17 @@ $ python lib/single-component-simplejira.py <tenant/managed> \
   --release release.json \
   --previousRelease previous_release.json \
   --jiraProjectKey HUM \
-  --jiraProjectKey ABC
+  --jiraProjectKey ABC \
+  --jiraServer issues.redhat.com
 
 {
     "releaseNotes": {
-        "issues":  [
-             { "key": "HUM-1234", "component": "my-component" },
-             { "key": "ABC-5678", "component": "my-component" }
-        ]
+        "issues": {
+            "fixed": [
+                { "id": "HUM-1234", "component": "my-component", "server": "issues.redhat.com" },
+                { "id": "ABC-5678", "component": "my-component", "server": "issues.redhat.com" }
+            ]
+        }
     }
 }
 ```
@@ -189,6 +192,8 @@ $ python lib/single-component-simplejira.py <tenant/managed> \
 - `--jiraProjectKey`: JIRA project key prefix to filter issues. Can be specified multiple
   times to include issues from multiple projects. For example, `--jiraProjectKey HUM`
   will match `HUM-1234` but not `ABC-456`.
+- `--jiraServer`: JIRA server hostname (e.g., `issues.redhat.com`). Included in the output
+  for each issue to identify the source JIRA instance.
 
 **When to use this collector vs the regular Jira collector:**
 - Use `single-component-simplejira` when you want to extract JIRA issue keys directly
