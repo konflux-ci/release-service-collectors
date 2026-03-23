@@ -176,8 +176,8 @@ def test_create_jira_record_single_component():
         "releaseNotes": {
             "issues": {
                 "fixed": [
-                    {"id": "HUM-1234", "component": "my-component", "server": "issues.redhat.com"},
-                    {"id": "HUM-5678", "component": "my-component", "server": "issues.redhat.com"},
+                    {"id": "HUM-1234", "component": "my-component", "source": "issues.redhat.com"},
+                    {"id": "HUM-5678", "component": "my-component", "source": "issues.redhat.com"},
                 ]
             }
         }

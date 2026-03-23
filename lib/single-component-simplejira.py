@@ -398,8 +398,8 @@ def create_jira_record(jira_issues, jira_server):
         "releaseNotes": {
             "issues": {
                 "fixed": [
-                    { "id": "HUM-1234", "component": "comp1", "server": "issues.redhat.com" },
-                    { "id": "HUM-5678", "component": "comp1", "server": "issues.redhat.com" },
+                    { "id": "HUM-1234", "component": "comp1", "source": "issues.redhat.com" },
+                    { "id": "HUM-5678", "component": "comp1", "source": "issues.redhat.com" },
                 ]
             }
         }
@@ -423,7 +423,7 @@ def create_jira_record(jira_issues, jira_server):
                 result["releaseNotes"]["issues"]["fixed"].append({
                     "id": key,
                     "component": comp_name,
-                    "server": jira_server
+                    "source": jira_server
                 })
 
     return result
