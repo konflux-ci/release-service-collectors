@@ -31,14 +31,14 @@ class MockCompletedProcess:
 
 def test_find_jira_issues_single_project():
     """Test finding JIRA issues for a single project key."""
-    text = "feat: HUM-1234 add new feature\nfix: HUM-5678 bug fix"
+    text = "Fixes HUM-1234 add new feature\nFixed HUM-5678 bug fix"
     result = find_jira_issues_in_text(text, ["HUM"])
     assert result == ["HUM-1234", "HUM-5678"]
 
 
 def test_find_jira_issues_multiple_projects():
     """Test finding JIRA issues for multiple project keys."""
-    text = "feat: HUM-1234 add feature\nfix: ABC-456 other fix\nchore: HUM-9999 cleanup"
+    text = "Fixes HUM-1234 add feature\nFixed ABC-456 other fix\nFixes HUM-9999 cleanup"
     result = find_jira_issues_in_text(text, ["HUM", "ABC"])
     assert "HUM-1234" in result
     assert "ABC-456" in result
@@ -48,7 +48,7 @@ def test_find_jira_issues_multiple_projects():
 
 def test_find_jira_issues_filters_other_projects():
     """Test that only issues matching the project keys are returned."""
-    text = "feat: HUM-1234 add feature\nfix: ABC-456 other fix\nchore: XYZ-9999 cleanup"
+    text = "Fixes HUM-1234 add feature\nFixed ABC-456 other fix\nFixes XYZ-9999 cleanup"
     result = find_jira_issues_in_text(text, ["HUM"])
     assert result == ["HUM-1234"]
     assert "ABC-456" not in result
@@ -62,9 +62,16 @@ def test_find_jira_issues_no_matches():
     assert result == []
 
 
+def test_find_jira_issues_no_matches_without_prefix():
+    """Test that issues without Fixes/Fixed prefix are not matched."""
+    text = "feat: HUM-1234 add new feature\nchore: HUM-5678 cleanup"
+    result = find_jira_issues_in_text(text, ["HUM"])
+    assert result == []
+
+
 def test_find_jira_issues_unique_only():
     """Test that duplicate JIRA issues are removed."""
-    text = "feat: HUM-1234 add feature\nfix: HUM-1234 same issue again\nchore: HUM-5678 cleanup"
+    text = "Fixes HUM-1234 add feature\nFixed HUM-1234 same issue again\nFixes HUM-5678 cleanup"
     result = find_jira_issues_in_text(text, ["HUM"])
     assert result == ["HUM-1234", "HUM-5678"]
     assert len(result) == 2
@@ -72,15 +79,25 @@ def test_find_jira_issues_unique_only():
 
 def test_find_jira_issues_unique_across_multiple_keys():
     """Test that duplicates are removed even when searching multiple project keys."""
-    text = "feat: HUM-1234 add feature\nfix: HUM-1234 again\nchore: ABC-1234 different project"
+    text = "Fixes HUM-1234 add feature\nFixed HUM-1234 again\nFixes ABC-1234 different project"
     result = find_jira_issues_in_text(text, ["HUM", "ABC"])
     assert result == ["HUM-1234", "ABC-1234"]
     assert len(result) == 2
 
 
-def test_find_jira_issues_case_sensitive():
+def test_find_jira_issues_case_insensitive_prefix():
+    """Test that Fixes/Fixed prefix is case insensitive."""
+    text = "fixes HUM-1234 lowercase\nFIXED HUM-5678 uppercase\nFixEs HUM-9999 mixed"
+    result = find_jira_issues_in_text(text, ["HUM"])
+    assert "HUM-1234" in result
+    assert "HUM-5678" in result
+    assert "HUM-9999" in result
+    assert len(result) == 3
+
+
+def test_find_jira_issues_project_key_case_sensitive():
     """Test that JIRA project keys are case sensitive."""
-    text = "feat: HUM-1234 uppercase\nfix: hum-5678 lowercase"
+    text = "Fixes HUM-1234 uppercase\nFixes hum-5678 lowercase"
     result = find_jira_issues_in_text(text, ["HUM"])
     assert result == ["HUM-1234"]
     assert "hum-5678" not in result
@@ -88,31 +105,37 @@ def test_find_jira_issues_case_sensitive():
 
 def test_find_jira_issues_word_boundary():
     """Test that JIRA issues match on word boundaries."""
-    text = "feat: HUM-1234 valid\nfix: AHUM-5678 invalid prefix\nchore: HUM-9999X invalid suffix"
+    text = "Fixes HUM-1234 valid\nFixes AHUM-5678 invalid prefix\nFixes HUM-9999X invalid suffix"
     result = find_jira_issues_in_text(text, ["HUM"])
     assert "HUM-1234" in result
     assert "AHUM-5678" not in result
 
 
-def test_find_jira_issues_various_positions():
-    """Test finding JIRA issues in various positions within text."""
-    text = """HUM-1111 at start
-    middle HUM-2222 of line
-    at end HUM-3333
-    [HUM-4444] in brackets
-    (HUM-5555) in parens"""
+def test_find_jira_issues_url_not_matched():
+    """Test that JIRA issues in URLs are not matched (false positive prevention)."""
+    text = "I looked at http://website.com/jira/HUM-730 for reference"
     result = find_jira_issues_in_text(text, ["HUM"])
-    assert len(result) == 5
-    assert "HUM-1111" in result
-    assert "HUM-2222" in result
-    assert "HUM-3333" in result
-    assert "HUM-4444" in result
-    assert "HUM-5555" in result
+    assert result == []
+
+
+def test_find_jira_issues_url_with_valid_fix():
+    """Test that URL mentions are ignored but valid Fixes statements are matched."""
+    text = "I looked at http://jira.com/browse/HUM-111\nFixes HUM-222 the actual fix"
+    result = find_jira_issues_in_text(text, ["HUM"])
+    assert result == ["HUM-222"]
+    assert "HUM-111" not in result
+
+
+def test_find_jira_issues_casual_mention_not_matched():
+    """Test that casual mentions of JIRA issues are not matched."""
+    text = "Related to HUM-1234 but this commit doesn't fix it"
+    result = find_jira_issues_in_text(text, ["HUM"])
+    assert result == []
 
 
 def test_find_jira_issues_special_chars_in_project_key():
     """Test that special regex characters in project key are escaped."""
-    text = "feat: A.B-1234 should not match AB-1234"
+    text = "Fixes A.B-1234 should match"
     result = find_jira_issues_in_text(text, ["A.B"])
     assert result == ["A.B-1234"]
 
@@ -209,7 +232,7 @@ def test_git_log_jira_issues_single_component(monkeypatch):
             assert "--format=%s%n%b" in cmd
             return MockCompletedProcess(
                 returncode=0,
-                stdout="feat: HUM-1234 add new feature\nfix: ABC-999 other project\nfix: HUM-5678 another fix",
+                stdout="Fixes HUM-1234 add new feature\nFixed ABC-999 other project\nFixes HUM-5678 another fix",
                 stderr=""
             )
 
@@ -238,7 +261,7 @@ def test_git_log_jira_issues_multiple_projects(monkeypatch):
         if "log" in cmd:
             return MockCompletedProcess(
                 returncode=0,
-                stdout="feat: HUM-1234 add new feature\nfix: ABC-999 other project\nfix: XYZ-5678 excluded",
+                stdout="Fixes HUM-1234 add new feature\nFixed ABC-999 other project\nFixes XYZ-5678 excluded",
                 stderr=""
             )
 
@@ -271,7 +294,7 @@ def test_git_log_with_context_filter(monkeypatch):
             captured_cmd = cmd
             return MockCompletedProcess(
                 returncode=0,
-                stdout="fix: HUM-1234 security patch",
+                stdout="Fixes HUM-1234 security patch",
                 stderr=""
             )
 
@@ -303,7 +326,7 @@ def test_git_log_without_context(monkeypatch):
             captured_cmd = cmd
             return MockCompletedProcess(
                 returncode=0,
-                stdout="fix: HUM-5678 another fix",
+                stdout="Fixed HUM-5678 another fix",
                 stderr=""
             )
 
@@ -330,7 +353,7 @@ def test_single_component_only_clones_once(monkeypatch):
             clone_count += 1
             return MockCompletedProcess(returncode=0, stdout="", stderr="")
         if "log" in cmd or "show" in cmd:
-            return MockCompletedProcess(returncode=0, stdout="HUM-9999 fixed", stderr="")
+            return MockCompletedProcess(returncode=0, stdout="Fixes HUM-9999", stderr="")
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
 
