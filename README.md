@@ -163,6 +163,13 @@ The Single Component Simple JIRA collector scans commit messages for JIRA issue 
 and filters them by specified project key prefixes. This is useful when you want to
 extract JIRA references from commit messages without querying the JIRA API.
 
+**Important:** Only issues prefixed with "Fixes" or "Fixed" are matched (case insensitive).
+This prevents false positives from URLs or casual mentions. For example:
+- `Fixes HUM-1234` - matched
+- `Fixed HUM-1234` - matched  
+- `http://jira.com/browse/HUM-1234` - NOT matched
+- `Related to HUM-1234` - NOT matched
+
 The component is identified via the Snapshot's labels:
 - `test.appstudio.openshift.io/type` must be `component`
 - `appstudio.openshift.io/component` contains the component name

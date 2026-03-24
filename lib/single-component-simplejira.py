@@ -371,6 +371,9 @@ def git_log_jira_issues_per_component(git_url, revision_current, revision_prev, 
 def find_jira_issues_in_text(text, jira_project_keys):
     """Find JIRA issue keys in text that match the specified project keys.
     
+    Only matches issues prefixed with "Fixes" or "Fixed" to avoid false positives
+    from URLs or casual mentions (e.g., "I looked at http://jira.com/HUM-730").
+    
     Args:
         text: The text to search (commit messages)
         jira_project_keys: List of JIRA project keys to filter by (e.g., ['HUM', 'ABC'])
@@ -380,7 +383,7 @@ def find_jira_issues_in_text(text, jira_project_keys):
     """
     all_matches = []
     for key in jira_project_keys:
-        pattern = rf'\b{re.escape(key)}-\d+\b'
+        pattern = rf'(?i:Fixes|Fixed)\s+({re.escape(key)}-\d+)\b'
         matches = re.findall(pattern, text)
         all_matches.extend(matches)
     unique_matches = list(dict.fromkeys(all_matches))
