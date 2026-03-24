@@ -187,8 +187,8 @@ $ python lib/single-component-simplejira.py <tenant/managed> \
     "releaseNotes": {
         "issues": {
             "fixed": [
-                { "id": "HUM-1234", "component": "my-component", "server": "issues.redhat.com" },
-                { "id": "ABC-5678", "component": "my-component", "server": "issues.redhat.com" }
+                { "id": "HUM-1234", "component": "my-component", "source": "issues.redhat.com", "public": true },
+                { "id": "ABC-5678", "component": "my-component", "source": "issues.redhat.com", "public": true }
             ]
         }
     }
