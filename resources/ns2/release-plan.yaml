@@ -1,0 +1,48 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: "true"
+    release.appstudio.openshift.io/standing-attribution: "true"
+  namespace: user-ns2
+  name: test-component
+spec:
+  application: test-component
+  target: managed-ns2
+  tenantPipeline:
+    params:
+      - name: abc
+        value: abc
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: https://github.com/<CHANGEME-ORG>/testrepo.git
+        - name: revision
+          value: main
+        - name: pathInRepo
+          value: .tekton/release.yaml
+      useEmptyDir: true
+    serviceAccountName: release-pipeline
+  collectors:
+    serviceAccountName: release-pipeline
+    items:
+      - name: project-issues
+        params:
+          - name: url
+            value: https://redhat.atlassian.net
+          - name: query
+            value: "project = KAR AND key > 'KAR-800' ORDER BY key"
+          - name: secretName
+            value: jira-collectors-secret
+        timeout: 60
+        type: jira
+      - name: cves
+        type: cve
+        params: []
+      - name: single-component-cves
+        type: single-component-cve
+        params: []
+    secrets:
+      - jira-collectors-secret

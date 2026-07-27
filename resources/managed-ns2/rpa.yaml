@@ -1,0 +1,31 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  name: test-component
+  labels:
+    release.appstudio.openshift.io/auto-release: "true"
+spec:
+  applications:
+    - test-component
+  data:
+    mapping:
+      components:
+        - name: test-component
+          repository: registry-service.kind-registry/test-component-release
+          tags:
+            - latest
+  origin: user-ns2
+  pipeline:
+    pipelineRef:
+      resolver: git
+      ociStorage: registry-service.kind-registry/test-component-release-ta
+      params:
+        - name: url
+          value: https://github.com/<CHANGEME-USER>/release-service-catalog.git
+        - name: revision
+          value: <CHANGEME-BRANCH>
+        - name: pathInRepo
+          value: pipelines/managed/push-to-external-registry/push-to-external-registry.yaml
+    serviceAccountName: release-pipeline
+  policy: default
