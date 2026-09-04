@@ -25,6 +25,7 @@ from lib.sbomdiff import (
     download_sbom_for_image,
     compare_component_sboms,
     process_component,
+    create_cves_record,
     compare_releases
 )
 
@@ -472,6 +473,113 @@ def test_process_component_comparison_exception(monkeypatch):
     assert "comparison failed" in result["reason"]
 
 
+# Tests for create_cves_record function
+
+def test_create_cves_record_all_cve_keys(monkeypatch):
+    """Test that valid CVE-format keys are retained unchanged and not logged as dropped."""
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+
+    result = create_cves_record({"comp1": ["CVE-2024-1234", "CVE-2024-5678"]})
+
+    assert result["releaseNotes"]["cves"] == [
+        {"key": "CVE-2024-1234", "component": "comp1"},
+        {"key": "CVE-2024-5678", "component": "comp1"},
+    ]
+    assert "dropping non-CVE key" not in captured_output.getvalue()
+
+
+def test_create_cves_record_filters_non_cve_keys(monkeypatch):
+    """Test that non-CVE advisory keys are dropped and logged with their component."""
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+
+    result = create_cves_record({
+        "comp1": ["CVE-2024-1234", "GHSA-gcjh-h69q-9w9g", "CVE-2024-5678"]
+    })
+
+    assert result["releaseNotes"]["cves"] == [
+        {"key": "CVE-2024-1234", "component": "comp1"},
+        {"key": "CVE-2024-5678", "component": "comp1"},
+    ]
+
+    stderr = captured_output.getvalue()
+    assert "GHSA-gcjh-h69q-9w9g" in stderr
+    assert "comp1" in stderr
+
+
+@pytest.mark.parametrize("key", [
+    "CVE-2024-1234",     # minimum 4-digit sequence
+    "CVE-2024-123456",   # 5+ digit sequence exercises the {4,} upper bound
+])
+def test_create_cves_record_retains_valid_boundaries(monkeypatch, key):
+    """Test that valid CVE keys across the sequence-length boundary are retained, not logged."""
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+
+    result = create_cves_record({"comp1": [key]})
+
+    assert result["releaseNotes"]["cves"] == [{"key": key, "component": "comp1"}]
+    assert "dropping non-CVE key" not in captured_output.getvalue()
+
+
+@pytest.mark.parametrize("key", [
+    "CVE-2024-123",              # sequence too short for {4,}
+    "CVE-24-1234",              # year not 4 digits
+    "cve-2024-1234",           # lowercase prefix (pattern is uppercase-only)
+    "CVE-2024-1234 ",          # trailing whitespace (anchored $)
+    "CVE-2024-1234\n",         # trailing newline ($ alone would match; fullmatch rejects)
+    " CVE-2024-1234",          # leading whitespace (anchored ^)
+    "prefix CVE-2024-1234",    # embedded substring (anchored ^)
+    "GHSA-gcjh-h69q-9w9g",     # non-CVE advisory id
+])
+def test_create_cves_record_drops_invalid_keys(monkeypatch, key):
+    """Test that malformed or non-CVE keys are dropped and logged with their component."""
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+
+    result = create_cves_record({"comp1": [key]})
+
+    assert result["releaseNotes"]["cves"] == []
+    stderr = captured_output.getvalue()
+    assert key in stderr
+    assert "comp1" in stderr
+
+
+def test_create_cves_record_empty_input():
+    """Test that an empty input dict yields an empty cves list (first-release path)."""
+    assert create_cves_record({}) == {"releaseNotes": {"cves": []}}
+
+
+def test_create_cves_record_multiple_components_mixed(monkeypatch):
+    """Test cross-component iteration; a component with only non-CVE keys contributes nothing."""
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+
+    result = create_cves_record({
+        "comp1": ["GHSA-gcjh-h69q-9w9g"],
+        "comp2": ["CVE-2024-1234"],
+    })
+
+    assert result["releaseNotes"]["cves"] == [
+        {"key": "CVE-2024-1234", "component": "comp2"},
+    ]
+
+    stderr = captured_output.getvalue()
+    assert "GHSA-gcjh-h69q-9w9g" in stderr
+    assert "comp1" in stderr
+
+
+def test_create_cves_record_all_components_dropped():
+    """Test that when every component's keys are non-CVE, the cves list is empty."""
+    result = create_cves_record({
+        "comp1": ["GHSA-gcjh-h69q-9w9g"],
+        "comp2": ["RHSA-2024:1234"],
+    })
+
+    assert result == {"releaseNotes": {"cves": []}}
+
+
 # Tests for compare_releases function
 
 def test_compare_releases_missing_release_file(monkeypatch, tmp_path):
@@ -659,6 +767,62 @@ def test_compare_releases_success(monkeypatch, tmp_path):
     assert isinstance(result["releaseNotes"]["cves"], list)
     assert len(result["releaseNotes"]["cves"]) == 1
     assert result["releaseNotes"]["cves"][0] == {"key": "CVE-2024-1234", "component": "comp1"}
+
+
+def test_compare_releases_filters_non_cve_keys(monkeypatch, tmp_path):
+    """Test end-to-end that non-CVE ids from the differ are filtered out of the output."""
+    release_file = tmp_path / 'release.json'
+    prev_file = tmp_path / 'prev.json'
+
+    release_file.write_text(json.dumps({
+        "spec": {"snapshot": "test-snapshot"},
+        "metadata": {"namespace": "test-ns"}
+    }))
+    prev_file.write_text(json.dumps({
+        "spec": {"snapshot": "prev-snapshot"},
+        "metadata": {"namespace": "test-ns"}
+    }))
+
+    monkeypatch.setattr(sys, 'argv', [
+        'sbomdiff.py',
+        '--release', str(release_file),
+        '--previousRelease', str(prev_file)
+    ])
+
+    snapshot_call_count = [0]
+
+    class MockCmdRunner:
+        def run_kubectl(self, args):
+            snapshot_call_count[0] += 1
+            image = "registry.io/image:v2" if snapshot_call_count[0] == 1 else "registry.io/image:v1"
+            return json.dumps({
+                "spec": {"components": [{"name": "comp1", "containerImage": image}]}
+            })
+
+        def run_cosign(self, args):
+            return json.dumps(mock_sbom_data)
+
+    class MockVulnerabilityDiffer:
+        def __init__(self, previous_image=None, next_image=None, previous_sbom=None,
+                     next_sbom=None, scanner=None, scan_type=None):
+            self.vulnerabilities_diff = [
+                "CVE-2024-1234", "GHSA-gcjh-h69q-9w9g", "RHSA-2024:1234"
+            ]
+
+    captured_output = StringIO()
+    monkeypatch.setattr(sys, 'stderr', captured_output)
+    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
+
+    result = compare_releases(MockCmdRunner())
+
+    assert result["releaseNotes"]["cves"] == [
+        {"key": "CVE-2024-1234", "component": "comp1"},
+    ]
+
+    stderr = captured_output.getvalue()
+    assert "GHSA-gcjh-h69q-9w9g" in stderr
+    assert "RHSA-2024:1234" in stderr
 
 
 def test_compare_releases_with_mode_argument(monkeypatch, tmp_path):

@@ -57,6 +57,7 @@ Exit Codes:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,9 @@ from diffused.differ import VulnerabilityDiffer  # type: ignore[import-untyped]
 
 # Scan type: "sbom" to download and scan SBOMs via cosign, "image" to scan images directly
 SCAN_TYPE = "image"
+
+# Release notes accept only CVE-format keys.
+CVE_KEY_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
 
 
 def log(message: str) -> None:
@@ -383,13 +387,19 @@ def create_cves_record(cves: Dict[str, List[str]]) -> Dict[str, Any]:
     """
     Convert component CVE data to releaseNotes format.
 
-    Input: {'comp1': ['CVE-1', 'CVE-3'], 'comp2': ['CVE-2']}
-    Output: {"releaseNotes": {"cves": [{"key": "CVE-1", "component": "comp1"}, ...]}}
+    Input: {'comp1': ['CVE-2024-1234', 'CVE-2024-5678'], 'comp2': ['CVE-2024-9999']}
+    Output: {"releaseNotes": {"cves": [{"key": "CVE-2024-1234", "component": "comp1"}, ...]}}
+
+    Only CVE-format keys are emitted; non-CVE advisory ids (e.g. GHSA) are dropped
+    and logged.
     """
     result: Dict[str, Any] = {"releaseNotes": {"cves": []}}
 
     for comp_name, keys in cves.items():
         for key in keys:
+            if not CVE_KEY_PATTERN.fullmatch(key):
+                log(f"WARNING: dropping non-CVE key {key} for component {comp_name}")
+                continue
             result["releaseNotes"]["cves"].append({
                 "key": key,
                 "component": comp_name
