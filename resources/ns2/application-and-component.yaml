@@ -1,0 +1,36 @@
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Application
+metadata:
+  name: test-component
+  namespace: user-ns2
+  annotations:
+    application.thumbnail: "1"
+spec:
+  displayName: test-component
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  name: test-component
+  namespace: user-ns2
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac
+    image.redhat.com/generate: '{"visibility": "public"}'
+spec:
+  application: test-component
+  componentName: test-component
+  source:
+    git:
+      revision: main
+      url: https://github.com/<CHANGEME-ORG>/testrepo.git
+      dockerfileUrl: Dockerfile
+      context: ./
+---
+apiVersion: "pipelinesascode.tekton.dev/v1alpha1"
+kind: Repository
+metadata:
+  name: project-repository
+  namespace: user-ns2
+spec:
+  url: https://github.com/<CHANGEME-ORG>/testrepo.git
