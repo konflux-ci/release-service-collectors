@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+from lib.git_safety import git_clone_cmd, validate_git_url, validate_revision
+
 pattern = r'CVE-\d+-\d+|CVE-\d+'
 
 def find_cve():
@@ -191,15 +193,24 @@ def components_info(release, previousRelease, secret_data):
 
 
 def git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data):
+    try:
+        validate_git_url(git_url)
+        validate_revision(revision_current, "revision")
+        if revision_prev:
+            validate_revision(revision_prev, "previous revision")
+    except ValueError as e:
+        log(f"ERROR: {e}")
+        exit(1)
+
     tmpdir = tempfile.mkdtemp()
     git_env = os.environ.copy()
-    git_cmd = ["git", "clone", git_url, tmpdir]
+    clone_url = git_url
     git_parts = urlparse(git_url)
     git_matcher = git_parts.path[1:].replace("/", ".")
 
     if git_matcher in secret_data:
         # git_parts.path starts with `/` so we remove it using `[1:]``
-        git_cmd = ["git", "clone", f"git@{git_parts.netloc}:{git_parts.path[1:]}", tmpdir]
+        clone_url = f"git@{git_parts.netloc}:{git_parts.path[1:]}"
 
         priv_key = base64.standard_b64decode(secret_data[git_matcher])
         fd = tempfile.TemporaryFile()
@@ -207,6 +218,7 @@ def git_log_titles_per_component(git_url, revision_current, revision_prev, secre
         os.chmod(fd.name, 0o600)
         git_env["GIT_SSH_COMMAND"] = f"ssh -i {fd.name} -o IdentitiesOnly=yes"
 
+    git_cmd = git_clone_cmd(clone_url, tmpdir)
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
     result = subprocess.run(git_cmd, check=False, capture_output=True, text=True, env=git_env)

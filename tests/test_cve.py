@@ -95,6 +95,34 @@ def test_get_log_titles_per_component_with_replacement(monkeypatch):
     titles = git_log_titles_per_component(git_url, revision_current, revision_prev, secret_data)
     assert "CVE-1234" in titles
 
+
+@pytest.mark.parametrize("malicious_url", [
+    "-oProxyCommand=touch /tmp/pwned",
+    "ext::sh -c touch /tmp/pwned",
+    "just-a-string-without-scheme",
+])
+def test_git_log_titles_rejects_unsafe_git_url(monkeypatch, malicious_url):
+    def fail_if_called(cmd, check, capture_output=True, text=True, env={}):
+        raise AssertionError("git must never run with an unvalidated URL")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_called)
+    with pytest.raises(SystemExit):
+        git_log_titles_per_component(malicious_url, "abc", "def", {})
+
+
+@pytest.mark.parametrize("malicious_revision", [
+    "-oProxyCommand=touch /tmp/pwned",
+    "--upload-pack=touch /tmp/pwned",
+])
+def test_git_log_titles_rejects_unsafe_revision(monkeypatch, malicious_revision):
+    def fail_if_called(cmd, check, capture_output=True, text=True, env={}):
+        raise AssertionError("git must never run with an unvalidated revision")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_called)
+    with pytest.raises(SystemExit):
+        git_log_titles_per_component("https://mock-domain.com", malicious_revision, "", {})
+
+
 def test_get_log_titles_per_component_with_no_replacement(monkeypatch):
     git_url = "https://example.com/group/repository"
     revision_current = "abc"

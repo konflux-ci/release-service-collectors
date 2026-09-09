@@ -5,6 +5,8 @@ import yaml
 from pathlib import Path
 from subprocess import run
 
+from lib.git_safety import git_clone_cmd, validate_git_url
+
 
 """
 python lib/convertyaml.py \
@@ -40,13 +42,21 @@ def read_parameters():
         print("ERROR: path provided is absolute, it must be relative.")
         exit(1)
 
+    try:
+        validate_git_url(args['git'])
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        exit(1)
+
     tmpdir = tempfile.mkdtemp()
     final_path = (Path(tmpdir) / args['path']).resolve()
     if not final_path.is_relative_to(tmpdir):
         print("ERROR: the resulting path is not contained within the repository. Do not use '..' to escalate directories.")
         exit(1)
 
-    git_cmd = ["git", "clone", args['git'], "--branch", args['branch'], "--depth", "1", tmpdir]
+    git_cmd = git_clone_cmd(
+        args['git'], tmpdir, extra_args=["--branch", args['branch'], "--depth", "1"]
+    )
     cmd = run(git_cmd, capture_output=True)
     if cmd.returncode != 0:
         stdout = cmd.stdout.decode('utf-8').strip('\n')

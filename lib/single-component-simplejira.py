@@ -31,6 +31,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+from lib.git_safety import git_clone_cmd, validate_git_url, validate_revision
+
 # Cache for cloned repositories: maps git_url to tmpdir path
 _repo_cache = {}
 
@@ -302,6 +304,12 @@ def clone_repo_if_needed(git_url, secret_data):
         log(f"Using cached clone for {git_url}")
         return _repo_cache[git_url]
 
+    try:
+        validate_git_url(git_url)
+    except ValueError as e:
+        log(f"ERROR: {e}")
+        exit(1)
+
     tmpdir = tempfile.mkdtemp()
     git_env = os.environ.copy()
     clone_url = git_url
@@ -317,13 +325,9 @@ def clone_repo_if_needed(git_url, secret_data):
         os.chmod(fd.name, 0o600)
         git_env["GIT_SSH_COMMAND"] = f"ssh -i {fd.name} -o IdentitiesOnly=yes"
 
-    git_cmd = [
-        "git", "clone",
-        "--filter=blob:none",
-        "--no-checkout",
-        clone_url,
-        tmpdir
-    ]
+    git_cmd = git_clone_cmd(
+        clone_url, tmpdir, extra_args=["--filter=blob:none", "--no-checkout"]
+    )
 
     cmd_str = " ".join(git_cmd)
     log(f"Running {cmd_str}")
@@ -342,6 +346,14 @@ def clone_repo_if_needed(git_url, secret_data):
 
 def git_log_jira_issues_per_component(git_url, revision_current, revision_prev, secret_data, context, jira_project_keys):
     """Get JIRA issues from git log for a component."""
+    try:
+        validate_revision(revision_current, "revision")
+        if revision_prev:
+            validate_revision(revision_prev, "previous revision")
+    except ValueError as e:
+        log(f"ERROR: {e}")
+        exit(1)
+
     repo_dir = clone_repo_if_needed(git_url, secret_data)
     os.chdir(repo_dir)
 
