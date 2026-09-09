@@ -1,5 +1,6 @@
 import json
 import pytest
+import sys
 import tempfile
 import yaml
 
@@ -41,4 +42,25 @@ def test_yaml_file_to_json_invalid(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         convertyaml.convert_yaml_to_json(str(yaml_file))
         assert exc_info.value.code == 1
+
+
+@pytest.mark.parametrize("malicious_git", [
+    "-oProxyCommand=touch /tmp/pwned",
+    "ext::sh -c touch /tmp/pwned",
+    "just-a-string-without-scheme",
+])
+def test_read_parameters_rejects_unsafe_git_url(monkeypatch, malicious_git):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("git clone must not run for an unvalidated URL")
+
+    monkeypatch.setattr(convertyaml, "run", fail_if_called)
+    monkeypatch.setattr(sys, "argv", [
+        "convertyaml.py", "tenant",
+        "--git", malicious_git,
+        "--branch", "main",
+        "--path", "notes.yaml",
+    ])
+
+    with pytest.raises(SystemExit):
+        convertyaml.read_parameters()
 
