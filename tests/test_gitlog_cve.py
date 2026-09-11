@@ -1,8 +1,13 @@
+import importlib
 import pytest
 import subprocess
 from pathlib import Path
-from lib.cve import components_info, create_cves_record
-from lib.cve import git_log_titles_per_component
+
+# Import module with hyphens in name using importlib
+gitlog_cve = importlib.import_module("lib.gitlog-cve")
+components_info = gitlog_cve.components_info
+create_cves_record = gitlog_cve.create_cves_record
+git_log_titles_per_component = gitlog_cve.git_log_titles_per_component
 
 mock_input =  {'comp1': ['CVE-1', 'CVE-3'],'comp2': ['CVE-2', 'CVE-4']}
 mock_result_good = {"releaseNotes": {"cves": [{"key": "CVE-1", "component": "comp1"},
