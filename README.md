@@ -51,9 +51,9 @@ $ python lib/jira.py <tenant/managed> \
 }
 ```
 
-### CVE
+### Gitlog CVE
 
-The CVE collector works by running the command against a git repository.
+The Gitlog CVE collector works by running the command against a git repository.
 It requires 2 files currentRelease json file and previousRelease json file.
 The script retrieves all the components from the currentRelease.
 It checks what CVEs were added to the git log between the current to previous release
@@ -66,7 +66,7 @@ and returns all the relevant CVEs per component.
 
 Example execution:
 ```
-$python lib/cve.py <tenant/managed> \
+$python lib/gitlog-cve.py <tenant/managed> \
   --release release.json \
   --previousRelease previous_release.json
 
@@ -80,7 +80,7 @@ $python lib/cve.py <tenant/managed> \
 }
 ```
 
-The CVE collector supports private repositories. First you need to specify a
+The Gitlog CVE collector supports private repositories. First you need to specify a
 `--secretName` referencing a Kubernetes secret. The secret should
 be in the following form:
 
@@ -143,18 +143,18 @@ $ python lib/single-component-cve.py <tenant/managed> \
 }
 ```
 
-**When to use this collector vs the regular CVE collector:**
+**When to use this collector vs the regular Gitlog CVE collector:**
 - Use `single-component-cve` for monorepos with many components sharing the same git URL
-- Use `cve` for applications where each component has its own repository
+- Use `gitlog-cve` for applications where each component has its own repository
 
 The `single-component-cve` collector uses blobless clones (`--filter=blob:none`) and
 caches cloned repositories, significantly reducing memory usage and execution time.
 
 If the Snapshot doesn't have the required labels (e.g., manually created snapshots),
 the collector returns an empty CVE list and logs a warning suggesting to use the
-regular `cve` collector instead.
+regular `gitlog-cve` collector instead.
 
-This collector supports the same `--secretName` option as the regular CVE collector
+This collector supports the same `--secretName` option as the regular `gitlog-cve` collector
 for private repositories.
 
 ### Single Component Simple JIRA
@@ -207,7 +207,7 @@ $ python lib/single-component-simplejira.py <tenant/managed> \
   from commit messages without needing JIRA API access
 - Use `jira` when you need to run JQL queries against a JIRA instance to get issue details
 
-This collector supports the same `--secretName` option as the CVE collectors for
+This collector supports the same `--secretName` option as the Gitlog CVE collectors for
 private repositories.
 
 If the Snapshot doesn't have the required labels (e.g., manually created snapshots),

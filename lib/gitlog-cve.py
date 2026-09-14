@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-python lib/cve.py \
+python lib/gitlog-cve.py \
     tenant \
     --release release.json \
     --previousRelease previous_release.json

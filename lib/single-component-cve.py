@@ -240,7 +240,7 @@ def single_component_info(release, previousRelease, secret_data):
     if not single_component:
         log("WARNING: Snapshot does not have single component labels.")
         log("Expected labels: test.appstudio.openshift.io/type=component and appstudio.openshift.io/component=<name>")
-        log("Returning empty CVE list. Use the regular 'cve' collector for full snapshot processing.")
+        log("Returning empty CVE list. Use the regular 'gitlog-cve' collector for full snapshot processing.")
         return create_cves_record({})
 
     log(f"Single component mode: processing only component '{single_component}'")
