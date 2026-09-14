@@ -7,12 +7,12 @@ from collections import namedtuple
 from io import StringIO
 from unittest.mock import MagicMock
 
-# Mock the diffused module before importing lib.sbomdiff
+# Mock the diffused module before importing lib.cve
 sys.modules['diffused'] = MagicMock()
 sys.modules['diffused.differ'] = MagicMock()
 
-import lib.sbomdiff
-from lib.sbomdiff import (
+import lib.cve
+from lib.cve import (
     ExternalCommands,
     log,
     read_json,
@@ -345,7 +345,7 @@ def test_compare_component_sboms_success(monkeypatch, tmp_path):
         def __init__(self, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
 
-    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     sbom1 = {"components": [{"name": "pkg1"}]}
     sbom2 = {"components": [{"name": "pkg1", "version": "2.0"}]}
@@ -385,7 +385,7 @@ def test_process_component_invalid_current_image(monkeypatch):
     assert "no containerImage" in result["reason"]
 
 
-@pytest.mark.skipif(lib.sbomdiff.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
+@pytest.mark.skipif(lib.cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_current_sbom_download_failure(monkeypatch):
     """Test processing component when current SBOM download fails (SBOM mode only)."""
     class MockCmdRunner:
@@ -411,7 +411,7 @@ def test_process_component_compared_success(monkeypatch):
         def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = []
 
-    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
     previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
@@ -424,7 +424,7 @@ def test_process_component_compared_success(monkeypatch):
     assert "vulnerabilities_removed" in result
 
 
-@pytest.mark.skipif(lib.sbomdiff.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
+@pytest.mark.skipif(lib.cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_previous_sbom_download_failure(monkeypatch):
     """Test processing component when previous SBOM download fails (SBOM mode only)."""
     call_count = [0]
@@ -462,7 +462,7 @@ def test_process_component_comparison_exception(monkeypatch):
         def vulnerabilities_diff(self):
             raise Exception("ACS scan failed")
 
-    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
     previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
@@ -585,7 +585,7 @@ def test_create_cves_record_all_components_dropped():
 def test_compare_releases_missing_release_file(monkeypatch, tmp_path):
     """Test that missing release file raises FileNotFoundError."""
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(tmp_path / 'nonexistent.json'),
         '--previousRelease', str(tmp_path / 'prev.json')
     ])
@@ -600,7 +600,7 @@ def test_compare_releases_missing_release_file(monkeypatch, tmp_path):
 def test_compare_releases_missing_previous_release_file(monkeypatch, tmp_path):
     """Test that missing previous release file raises FileNotFoundError."""
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(tmp_path / 'release.json'),
         '--previousRelease', str(tmp_path / 'nonexistent.json')
     ])
@@ -621,7 +621,7 @@ def test_compare_releases_empty_release_file(monkeypatch, tmp_path):
     prev_file.write_text('{}')
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -644,7 +644,7 @@ def test_compare_releases_first_release(monkeypatch, tmp_path):
     prev_file.write_text('')  # Empty previous release
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -688,7 +688,7 @@ def test_compare_releases_no_components_in_current(monkeypatch, tmp_path):
     prev_file.write_text(json.dumps(prev_release_data))
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -721,7 +721,7 @@ def test_compare_releases_success(monkeypatch, tmp_path):
     prev_file.write_text(json.dumps(prev_release_data))
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -757,7 +757,7 @@ def test_compare_releases_success(monkeypatch, tmp_path):
         def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
 
-    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
     monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     result = compare_releases(MockCmdRunner())
@@ -784,7 +784,7 @@ def test_compare_releases_filters_non_cve_keys(monkeypatch, tmp_path):
     }))
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -811,7 +811,7 @@ def test_compare_releases_filters_non_cve_keys(monkeypatch, tmp_path):
 
     captured_output = StringIO()
     monkeypatch.setattr(sys, 'stderr', captured_output)
-    monkeypatch.setattr(lib.sbomdiff, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
     monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     result = compare_releases(MockCmdRunner())
@@ -839,7 +839,7 @@ def test_compare_releases_with_mode_argument(monkeypatch, tmp_path):
     prev_file.write_text('')
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         'tenant',  # mode argument
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
@@ -884,7 +884,7 @@ def test_compare_releases_missing_roxctl(monkeypatch, tmp_path):
     prev_file.write_text(json.dumps(prev_release_data))
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -915,7 +915,7 @@ def test_main_block_exit_code_on_error(monkeypatch, tmp_path):
     release_file.write_text('{}')
 
     monkeypatch.setattr(sys, 'argv', [
-        'sbomdiff.py',
+        'cve.py',
         '--release', str(release_file),
         '--previousRelease', str(prev_file)
     ])
@@ -924,7 +924,7 @@ def test_main_block_exit_code_on_error(monkeypatch, tmp_path):
     def mock_compare_releases(cmd_runner=None):
         raise FileNotFoundError("Path to previousRelease file doesn't exist")
 
-    monkeypatch.setattr(lib.sbomdiff, 'compare_releases', mock_compare_releases)
+    monkeypatch.setattr(lib.cve, 'compare_releases', mock_compare_releases)
 
     # Import and run the main block
     with pytest.raises(SystemExit) as exc_info:
