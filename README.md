@@ -51,6 +51,35 @@ $ python lib/jira.py <tenant/managed> \
 }
 ```
 
+### CVE
+
+The CVE collector reports the CVEs that were fixed between two consecutive
+releases. For each component in the current release, it compares the
+vulnerabilities of the previously released container image against the newly
+built one using Red Hat Advanced Cluster Security (RHACS) through
+`diffused-lib`, and returns the CVEs that are no longer present.
+
+Example execution:
+```
+$ python lib/cve.py <tenant/managed> \
+  --release release.json \
+  --previousRelease previous_release.json
+
+{
+    "releaseNotes": {
+        "cves":  [
+             { "key": "CVE-2024-1234", "component": "my-component" },
+             { "key": "CVE-2024-5678", "component": "my-component" }
+        ]
+    }
+}
+```
+
+Only CVE-format keys (e.g. `CVE-2024-1234`) are included; advisory ids from
+other ecosystems (e.g. GHSA) are filtered out. Components that cannot be
+compared (missing container image, scan error, or newly added in this release)
+are logged and produce no CVE entries.
+
 ### Gitlog CVE
 
 The Gitlog CVE collector works by running the command against a git repository.
