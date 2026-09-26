@@ -1,6 +1,7 @@
 import os
 import pytest
 import requests
+import socket
 import subprocess
 from collections import namedtuple
 
@@ -215,3 +216,69 @@ def test_create_json_record(monkeypatch, query_data, expected ):
 
     result = create_json_record(query_data, "mock-domain.com")
     assert result == expected
+
+
+def mock_getaddrinfo_returning(*addrs):
+    """A fake socket.getaddrinfo() that resolves any hostname to `addrs`,
+    so tests don't depend on real DNS."""
+    def _getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (addr, 0)) for addr in addrs]
+    return _getaddrinfo
+
+
+# No real connection is ever made to this address (getaddrinfo is mocked); it's
+# only used as a literal value that ipaddress recognizes as a public/global IP,
+# unlike an RFC 5737 TEST-NET address, which Python's ipaddress module itself
+# classifies as is_private.
+PUBLIC_TEST_IP = "8.8.8.8"
+
+
+@pytest.mark.parametrize(
+    'url',
+    [
+        'https://redhat.atlassian.net',
+        'https://issues.redhat.com',
+        'https://issues.redhat.com/',
+        'https://sub.domain.atlassian.net',
+    ],
+)
+def test_validate_jira_url_accepts_plausible_hosts(monkeypatch, url):
+    monkeypatch.setattr(socket, 'getaddrinfo', mock_getaddrinfo_returning(PUBLIC_TEST_IP))
+    assert lib.jira.validate_jira_url(url) == url
+
+
+def test_validate_jira_url_rejects_host_resolving_to_private_address(monkeypatch):
+    # The hostname itself looks like a perfectly normal public domain; only
+    # DNS resolution reveals it actually points inside the cluster/network.
+    monkeypatch.setattr(socket, 'getaddrinfo', mock_getaddrinfo_returning("10.0.0.5"))
+    with pytest.raises(SystemExit):
+        lib.jira.validate_jira_url("https://rebound.example.com")
+
+
+def test_validate_jira_url_rejects_unresolvable_host(monkeypatch):
+    def _raise(host, *args, **kwargs):
+        raise socket.gaierror("Name or service not known")
+    monkeypatch.setattr(socket, 'getaddrinfo', _raise)
+    with pytest.raises(SystemExit):
+        lib.jira.validate_jira_url("https://does-not-resolve.example.com")
+
+
+@pytest.mark.parametrize(
+    'url',
+    [
+        'http://issues.redhat.com',  # not https
+        'https://attacker.example.com:apitoken@issues.redhat.com/',  # embedded userinfo
+        'https://169.254.169.254',  # cloud metadata IP literal
+        'https://127.0.0.1',  # loopback IP literal
+        'https://[::1]',  # loopback IPv6 literal
+        'https://localhost',
+        'https://internal-service.svc',  # cluster-internal DNS suffix
+        'https://internal-service.cluster.local',
+        'https://internal-service.internal',
+        'https://internal-service.local',
+        'not-a-url',
+    ],
+)
+def test_validate_jira_url_rejects_unsafe_hosts(url):
+    with pytest.raises(SystemExit):
+        lib.jira.validate_jira_url(url)
