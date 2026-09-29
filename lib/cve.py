@@ -42,6 +42,7 @@ Dependencies:
     - cosign: Must be available in PATH for downloading SBOMs (only in "sbom" mode)
     - roxctl: Must be pre-installed in the container image (ACS CLI)
     - diffused-lib: Must be pre-installed in the container image
+      (https://pypi.org/project/diffused-lib/)
 
 Example:
     python lib/cve.py tenant \\
