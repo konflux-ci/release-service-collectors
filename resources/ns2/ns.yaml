@@ -1,0 +1,7 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: user-ns2
+  labels:
+    konflux-ci.dev/type: tenant
