@@ -13,6 +13,14 @@ The secret must contain:
 - `email`: Service account email for Jira Cloud authentication
 - `apitoken`: API token generated at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)
 
+`--url` must point at a real external Jira instance, since these credentials are sent to it as
+Basic auth. It is validated and rejected if it:
+- does not use `https`
+- contains embedded userinfo (`user:pass@host`)
+- is a raw IP address rather than a hostname
+- is (or resolves to) `localhost`, a private/loopback/link-local address, or a cluster-internal
+  DNS suffix (`.local`, `.internal`, `.svc`, `.cluster.local`, `.localdomain`)
+
 Example of k8s secret:
 ```
 {

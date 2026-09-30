@@ -27,11 +27,14 @@ output:
 
 import argparse
 import base64
+import ipaddress
 import json
 import os
+import socket
 import sys
 import subprocess
 import requests
+from urllib.parse import urlparse
 
 
 def read_json(file_name):
@@ -80,6 +83,7 @@ def search_issues():
     parser.add_argument('-p', '--previousRelease', help='Path to previous release file. Not used, supported to align the interface.', required=False)
     args = vars(parser.parse_args())
 
+    args['url'] = validate_jira_url(args['url'])
     namespace = get_namespace_from_release(args['release'])
     email, api_token = get_secret_data(namespace, args['secretName'])
 
@@ -91,6 +95,71 @@ def search_issues():
 
 def log(message):
     print(message, file=sys.stderr)
+
+
+_DISALLOWED_JIRA_HOST_SUFFIXES = (".local", ".internal", ".localdomain", ".cluster.local", ".svc")
+
+
+def validate_jira_url(url):
+    """
+    Reject a --url value that isn't a plausible external Jira instance, so
+    the Basic-auth credentials this script sends can't be redirected to an
+    arbitrary or cluster-internal host (SSRF / credential exfiltration).
+    """
+    parsed = urlparse(url)
+
+    if parsed.scheme != "https":
+        print(f"Error: --url must use https, got '{parsed.scheme or url}'")
+        exit(1)
+
+    if parsed.username or parsed.password:
+        print("Error: --url must not contain embedded userinfo (e.g. user:pass@host)")
+        exit(1)
+
+    hostname = parsed.hostname
+    if not hostname:
+        print("Error: --url does not contain a valid hostname")
+        exit(1)
+
+    try:
+        ipaddress.ip_address(hostname)
+        print("Error: --url must be a hostname, not a raw IP address")
+        exit(1)
+    except ValueError:
+        pass  # not an IP literal, as expected for a real Jira hostname
+
+    if hostname == "localhost" or hostname.endswith(_DISALLOWED_JIRA_HOST_SUFFIXES):
+        print(f"Error: --url host '{hostname}' is not a permitted external Jira host")
+        exit(1)
+
+    # A public-looking hostname can still be configured (or, via DNS
+    # rebinding, re-configured after this check) to resolve to a
+    # private/loopback/link-local address. Resolve it now and reject any
+    # such address.
+    #
+    # This narrows but does not eliminate a rebinding attacker: requests/
+    # urllib3 performs its own independent lookup when it actually
+    # connects, moments later. Closing that fully would mean pinning the
+    # connection to this resolved address (custom HTTPAdapter or an
+    # extra dependency), which isn't worth it here: whoever can set
+    # --url is, in every real deployment, the same party who already
+    # owns --secretName's k8s Secret and therefore already has
+    # namespace-level RBAC to run arbitrary pipelines/pods with the same
+    # network reach directly -- rebinding this request wouldn't grant
+    # them a capability they don't already have.
+    try:
+        resolved_addrs = {info[4][0] for info in socket.getaddrinfo(hostname, None)}
+    except OSError as exc:
+        print(f"Error: unable to resolve --url host '{hostname}': {exc}")
+        exit(1)
+
+    for addr in resolved_addrs:
+        ip = ipaddress.ip_address(addr)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            print(f"Error: --url host '{hostname}' resolves to a private/internal address ({addr}), which is not permitted")
+            exit(1)
+
+    return url
 
 
 def create_json_record(issues, url):
