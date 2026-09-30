@@ -6,6 +6,15 @@ import yaml
 from pathlib import Path
 from subprocess import run
 
+try:
+    # Package import: used by tests and `python -m lib.convertyaml`.
+    from lib.git_safety import git_clone_cmd, validate_git_url, validate_revision
+except ImportError:
+    # release-service-catalog runs this file directly (`python3 lib/convertyaml.py`),
+    # which puts this file's own directory on sys.path instead of the repo
+    # root, so the package-qualified import above fails.
+    from git_safety import git_clone_cmd, validate_git_url, validate_revision
+
 
 """
 python lib/convertyaml.py \
@@ -26,7 +35,12 @@ def read_parameters():
         choices=["managed", "tenant"],
         help="Mode in which the script is called. It does not have any impact for this script."
     )
-    parser.add_argument("--git", required=True, help="SSH clone string for a git repository")
+    parser.add_argument(
+        "--git",
+        required=True,
+        help="Git repository URL to clone. Must use an explicit https, ssh, or git scheme with a host, "
+        "e.g. 'https://gitlab.example.com/group/repo.git' (scp-like 'user@host:path' syntax is not accepted)."
+    )
     parser.add_argument("--branch", required=True, help="Branch name to be cloned, it can be a branch or a SHA.")
     parser.add_argument(
         "--path",
@@ -41,9 +55,18 @@ def read_parameters():
         print("ERROR: path provided is absolute, it must be relative.")
         exit(1)
 
+    try:
+        validate_git_url(args['git'])
+        validate_revision(args['branch'], "branch")
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        exit(1)
+
     tmpdir = tempfile.mkdtemp()
 
-    git_cmd = ["git", "clone", args['git'], "--branch", args['branch'], "--depth", "1", tmpdir]
+    git_cmd = git_clone_cmd(
+        args['git'], tmpdir, extra_args=["--branch", args['branch'], "--depth", "1"]
+    )
     cmd = run(git_cmd, capture_output=True)
     if cmd.returncode != 0:
         stdout = cmd.stdout.decode('utf-8').strip('\n')

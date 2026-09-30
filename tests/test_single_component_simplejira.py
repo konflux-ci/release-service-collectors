@@ -405,3 +405,32 @@ def test_context_fallback_from_previous_release(monkeypatch, tmp_path):
     assert prev_detail is not None
     url_prev, rev_prev, ctx_prev = prev_detail
     assert ctx_prev == "rpms/httpd", "Previous component should have context"
+
+
+@pytest.mark.parametrize("malicious_url", [
+    "-oProxyCommand=touch /tmp/pwned",
+    "ext::sh -c touch /tmp/pwned",
+    "just-a-string-without-scheme",
+])
+def test_git_log_jira_issues_rejects_unsafe_git_url(monkeypatch, malicious_url):
+    def fail_if_called(cmd, check, capture_output, text, env={}):
+        raise AssertionError("git must never run with an unvalidated URL")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_called)
+    with pytest.raises(SystemExit):
+        git_log_jira_issues_per_component(malicious_url, "abc", "def", {}, None, ["HUM"])
+
+
+@pytest.mark.parametrize("malicious_revision", [
+    "-oProxyCommand=touch /tmp/pwned",
+    "--upload-pack=touch /tmp/pwned",
+])
+def test_git_log_jira_issues_rejects_unsafe_revision(monkeypatch, malicious_revision):
+    def fail_if_called(cmd, check, capture_output, text, env={}):
+        raise AssertionError("git must never run with an unvalidated revision")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_called)
+    with pytest.raises(SystemExit):
+        git_log_jira_issues_per_component(
+            "https://example.com/monorepo", malicious_revision, "", {}, None, ["HUM"]
+        )
