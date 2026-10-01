@@ -65,7 +65,8 @@ The CVE collector reports the CVEs that were fixed between two consecutive
 releases. For each component in the current release, it compares the
 vulnerabilities of the previously released container image against the newly
 built one using Red Hat Advanced Cluster Security (RHACS) through
-`diffused-lib`, and returns the CVEs that are no longer present.
+[`diffused-lib`](https://pypi.org/project/diffused-lib/), and returns the CVEs
+that are no longer present.
 
 Example execution:
 ```
