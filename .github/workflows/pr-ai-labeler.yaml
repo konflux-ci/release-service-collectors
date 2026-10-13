@@ -1,0 +1,21 @@
+---
+name: PR AI Labeler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label PR using shared action
+        uses: konflux-ci/release-service-automations/pr-ai-labeler@6b7d12f64638d1769ed3fff237c468b70c3fbc76  # main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ github.event.pull_request.number }}
+          repository: ${{ github.repository }}
