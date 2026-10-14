@@ -18,9 +18,9 @@ jobs:
       id-token: write  # Required for Codecov OIDC
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
     - name: Set up Python 3.13
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.13"
     - name: Install dependencies
@@ -37,7 +37,7 @@ jobs:
       run: |
         python -m pytest --cov=lib --cov-report=xml:coverage.xml
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
       with:
         use_oidc: true
         flags: unit-tests
