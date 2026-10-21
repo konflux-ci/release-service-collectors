@@ -11,9 +11,9 @@ Scan Modes (controlled by SCAN_TYPE constant):
     - "sbom": Downloads SBOMs using cosign and scans them (ACS SBOM support coming soon)
 
 Usage:
-    python lib/cve.py --release release.json --previousRelease previous_release.json
-    python lib/cve.py tenant --release release.json --previousRelease previous_release.json
-    python lib/cve.py managed --release release.json --previousRelease previous_release.json
+    python lib/fixed-cve.py --release release.json --previousRelease previous_release.json
+    python lib/fixed-cve.py tenant --release release.json --previousRelease previous_release.json
+    python lib/fixed-cve.py managed --release release.json --previousRelease previous_release.json
 
 Arguments:
     mode                    (Optional) Either 'tenant' or 'managed' (currently has no impact)
@@ -45,7 +45,7 @@ Dependencies:
       (https://pypi.org/project/diffused-lib/)
 
 Example:
-    python lib/cve.py tenant \\
+    python lib/fixed-cve.py tenant \\
         --release /path/to/current-release.json \\
         --previousRelease /path/to/previous-release.json
 

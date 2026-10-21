@@ -7,27 +7,28 @@ from collections import namedtuple
 from io import StringIO
 from unittest.mock import MagicMock
 
-# Mock the diffused module before importing lib.cve
+# Mock the diffused module before importing the collector
 sys.modules['diffused'] = MagicMock()
 sys.modules['diffused.differ'] = MagicMock()
 
-import lib.cve
-from lib.cve import (
-    ExternalCommands,
-    log,
-    read_json,
-    validate_container_image,
-    extract_nested_string,
-    get_snapshot_name,
-    get_snapshot_namespace,
-    get_snapshot_data,
-    get_components_from_snapshot,
-    download_sbom_for_image,
-    compare_component_sboms,
-    process_component,
-    create_cves_record,
-    compare_releases
-)
+# Import module with hyphens in name using importlib
+import importlib
+fixed_cve = importlib.import_module("lib.fixed-cve")
+
+ExternalCommands = fixed_cve.ExternalCommands
+log = fixed_cve.log
+read_json = fixed_cve.read_json
+validate_container_image = fixed_cve.validate_container_image
+extract_nested_string = fixed_cve.extract_nested_string
+get_snapshot_name = fixed_cve.get_snapshot_name
+get_snapshot_namespace = fixed_cve.get_snapshot_namespace
+get_snapshot_data = fixed_cve.get_snapshot_data
+get_components_from_snapshot = fixed_cve.get_components_from_snapshot
+download_sbom_for_image = fixed_cve.download_sbom_for_image
+compare_component_sboms = fixed_cve.compare_component_sboms
+process_component = fixed_cve.process_component
+create_cves_record = fixed_cve.create_cves_record
+compare_releases = fixed_cve.compare_releases
 
 
 MockCompletedProcess = namedtuple('MockCompletedProcess', ['returncode', 'stdout', 'stderr'])
@@ -345,7 +346,7 @@ def test_compare_component_sboms_success(monkeypatch, tmp_path):
         def __init__(self, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
 
-    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     sbom1 = {"components": [{"name": "pkg1"}]}
     sbom2 = {"components": [{"name": "pkg1", "version": "2.0"}]}
@@ -385,7 +386,7 @@ def test_process_component_invalid_current_image(monkeypatch):
     assert "no containerImage" in result["reason"]
 
 
-@pytest.mark.skipif(lib.cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
+@pytest.mark.skipif(fixed_cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_current_sbom_download_failure(monkeypatch):
     """Test processing component when current SBOM download fails (SBOM mode only)."""
     class MockCmdRunner:
@@ -411,7 +412,7 @@ def test_process_component_compared_success(monkeypatch):
         def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = []
 
-    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
     previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
@@ -424,7 +425,7 @@ def test_process_component_compared_success(monkeypatch):
     assert "vulnerabilities_removed" in result
 
 
-@pytest.mark.skipif(lib.cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
+@pytest.mark.skipif(fixed_cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_previous_sbom_download_failure(monkeypatch):
     """Test processing component when previous SBOM download fails (SBOM mode only)."""
     call_count = [0]
@@ -462,7 +463,7 @@ def test_process_component_comparison_exception(monkeypatch):
         def vulnerabilities_diff(self):
             raise Exception("ACS scan failed")
 
-    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
 
     current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
     previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
@@ -757,7 +758,7 @@ def test_compare_releases_success(monkeypatch, tmp_path):
         def __init__(self, previous_image=None, next_image=None, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
             self.vulnerabilities_diff = ["CVE-2024-1234"]
 
-    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
     monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     result = compare_releases(MockCmdRunner())
@@ -811,7 +812,7 @@ def test_compare_releases_filters_non_cve_keys(monkeypatch, tmp_path):
 
     captured_output = StringIO()
     monkeypatch.setattr(sys, 'stderr', captured_output)
-    monkeypatch.setattr(lib.cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
     monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
 
     result = compare_releases(MockCmdRunner())
@@ -924,7 +925,7 @@ def test_main_block_exit_code_on_error(monkeypatch, tmp_path):
     def mock_compare_releases(cmd_runner=None):
         raise FileNotFoundError("Path to previousRelease file doesn't exist")
 
-    monkeypatch.setattr(lib.cve, 'compare_releases', mock_compare_releases)
+    monkeypatch.setattr(fixed_cve, 'compare_releases', mock_compare_releases)
 
     # Import and run the main block
     with pytest.raises(SystemExit) as exc_info:
