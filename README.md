@@ -59,9 +59,9 @@ $ python lib/jira.py <tenant/managed> \
 }
 ```
 
-### CVE
+### Fixed CVE
 
-The CVE collector reports the CVEs that were fixed between two consecutive
+The Fixed CVE collector reports the CVEs that were fixed between two consecutive
 releases. For each component in the current release, it compares the
 vulnerabilities of the previously released container image against the newly
 built one using Red Hat Advanced Cluster Security (RHACS) through
@@ -70,7 +70,7 @@ that are no longer present.
 
 Example execution:
 ```
-$ python lib/cve.py <tenant/managed> \
+$ python lib/fixed-cve.py <tenant/managed> \
   --release release.json \
   --previousRelease previous_release.json
 
