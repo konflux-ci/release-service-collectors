@@ -89,6 +89,45 @@ other ecosystems (e.g. GHSA) are filtered out. Components that cannot be
 compared (missing container image, scan error, or newly added in this release)
 are logged and produce no CVE entries.
 
+### CVE
+
+The CVE collector scans the container image(s) of the current release with Red Hat
+Advanced Cluster Security (RHACS) through
+[`diffused-lib`](https://pypi.org/project/diffused-lib/) and reports *all* the
+vulnerabilities found. Unlike the Fixed CVE collector this is not a diff: only the
+current image is scanned, since the check is an absolute property of the image being
+released. No filtering is applied here; a later pipeline task selects and grades the
+relevant CVEs.
+
+Example execution:
+```
+$ python lib/cve.py <tenant/managed> \
+  --release release.json
+
+{
+    "cves": [
+        {
+            "konfluxComponent": "my-component",
+            "cveId": "CVE-2024-1234",
+            "cveSeverity": "IMPORTANT",
+            "cveCVSS": 7.5,
+            "cveInfo": "https://access.redhat.com/security/cve/CVE-2024-1234",
+            "advisoryId": "RHSA-2024:1234",
+            "advisoryInfo": "https://access.redhat.com/errata/RHSA-2024:1234",
+            "componentName": "some-package",
+            "componentVersion": "1.0.0-1.el8",
+            "componentFixedVersion": "0:1.0.0-2.el8"
+        }
+    ]
+}
+```
+
+Each record is the scanner's vulnerability entry passed through verbatim with the
+owning `konfluxComponent` added, so any extra fields the scanner reports are
+preserved. The collector fails closed: any scan failure (including ACS being
+unreachable) or a missing container image fails the whole collector, so a release
+cannot pass on an image that could not be scanned.
+
 ### Gitlog CVE
 
 The Gitlog CVE collector works by running the command against a git repository.
