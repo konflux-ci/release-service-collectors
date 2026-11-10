@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Single Component CVE Collector
+Single Component Gitlog CVE Collector
 
 This collector is optimized for monorepos where many components share the same
 git repository. Instead of processing all components in the snapshot, it only
@@ -10,7 +10,7 @@ The component is identified via the Snapshot's label:
   appstudio.openshift.io/component
 
 Usage:
-    python lib/single_component_cve.py \
+    python lib/single-component-gitlog-cve.py \
         tenant \
         --release release.json \
         --previousRelease previous_release.json
@@ -30,10 +30,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 try:
-    # Package import: used by tests and `python -m lib.single-component-cve`.
+    # Package import: used by tests and `python -m lib.single-component-gitlog-cve`.
     from lib.git_safety import git_clone_cmd, validate_git_url, validate_revision
 except ImportError:
-    # release-service-catalog runs this file directly (`python3 lib/single-component-cve.py`),
+    # release-service-catalog runs this file directly (`python3 lib/single-component-gitlog-cve.py`),
     # which puts this file's own directory on sys.path instead of the repo
     # root, so the package-qualified import above fails.
     from git_safety import git_clone_cmd, validate_git_url, validate_revision
@@ -67,7 +67,7 @@ atexit.register(cleanup_repo_cache)
 def find_cve():
     file_not_exists = 0
     parser = argparse.ArgumentParser(
-        description="Single Component CVE Collector - processes only the component that triggered the build"
+        description="Single Component Gitlog CVE Collector - processes only the component that triggered the build"
     )
     parser.add_argument(
         "mode",

@@ -189,9 +189,9 @@ cloning with SSH is derived from the HTTPS URL of the repository, so
 `https://gitlab.com/my-group/my-repo` becomes `git@gitlab.com:my-group/my-repo`.
 The private key is passed using the environment variable `GIT_SSH_COMMAND`.
 
-### Single Component CVE
+### Single Component Gitlog CVE
 
-The Single Component CVE collector is optimized for **monorepos** where many components
+The Single Component Gitlog CVE collector is optimized for **monorepos** where many components
 share the same git repository. Instead of processing all components in the snapshot
 (which would clone the same repo multiple times), it only processes the single component
 that triggered the build.
@@ -206,7 +206,7 @@ other components' commits.
 
 Example execution:
 ```
-$ python lib/single-component-cve.py <tenant/managed> \
+$ python lib/single-component-gitlog-cve.py <tenant/managed> \
   --release release.json \
   --previousRelease previous_release.json
 
@@ -221,10 +221,10 @@ $ python lib/single-component-cve.py <tenant/managed> \
 ```
 
 **When to use this collector vs the regular Gitlog CVE collector:**
-- Use `single-component-cve` for monorepos with many components sharing the same git URL
+- Use `single-component-gitlog-cve` for monorepos with many components sharing the same git URL
 - Use `gitlog-cve` for applications where each component has its own repository
 
-The `single-component-cve` collector uses blobless clones (`--filter=blob:none`) and
+The `single-component-gitlog-cve` collector uses blobless clones (`--filter=blob:none`) and
 caches cloned repositories, significantly reducing memory usage and execution time.
 
 If the Snapshot doesn't have the required labels (e.g., manually created snapshots),
