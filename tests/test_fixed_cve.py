@@ -18,6 +18,7 @@ fixed_cve = importlib.import_module("lib.fixed-cve")
 ExternalCommands = fixed_cve.ExternalCommands
 log = fixed_cve.log
 read_json = fixed_cve.read_json
+validate_resource_name = fixed_cve.validate_resource_name
 validate_container_image = fixed_cve.validate_container_image
 extract_nested_string = fixed_cve.extract_nested_string
 get_snapshot_name = fixed_cve.get_snapshot_name
@@ -89,16 +90,30 @@ def test_external_commands_run_cosign_success(monkeypatch):
     assert result == json.dumps(mock_sbom_data)
 
 
-def test_external_commands_run_kubectl_failure(monkeypatch):
-    """Test kubectl command failure raises CalledProcessError."""
+def test_run_command_surfaces_stderr_as_runtime_error(monkeypatch):
+    """A command failure is re-raised as RuntimeError carrying its stderr."""
     def mock_subprocess_run(cmd, check, capture_output, text):
-        raise subprocess.CalledProcessError(1, cmd, stderr="Error: not found")
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd=cmd, stderr="Error from server (Forbidden)"
+        )
 
     monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
 
     cmd_runner = ExternalCommands()
-    with pytest.raises(subprocess.CalledProcessError):
-        cmd_runner.run_kubectl(["get", "pods"])
+    with pytest.raises(RuntimeError, match="Error from server \\(Forbidden\\)"):
+        cmd_runner.run_kubectl(["get", "snapshot", "x"])
+
+
+# Tests for validate_resource_name
+
+def test_validate_resource_name_ok():
+    assert validate_resource_name("my-snapshot-1.2", "snapshot") == "my-snapshot-1.2"
+
+
+@pytest.mark.parametrize("bad", ["--server=https://evil", "-n", "a b", "UPPER", "a/b", "", "x" * 254])
+def test_validate_resource_name_rejects(bad):
+    with pytest.raises(ValueError, match="must be a DNS-1123 name"):
+        validate_resource_name(bad, "snapshot")
 
 
 # Tests for log function
@@ -254,12 +269,29 @@ def test_get_snapshot_namespace_missing_key():
 
 def test_get_snapshot_data_success(monkeypatch):
     """Test successful snapshot data retrieval."""
-    class MockCmdRunner:
-        def run_kubectl(self, args):
-            return json.dumps(mock_snapshot_data)
+    runner = MagicMock()
+    runner.run_kubectl.return_value = json.dumps(mock_snapshot_data)
 
-    result = get_snapshot_data("test-ns", "test-snapshot", MockCmdRunner())
+    result = get_snapshot_data("test-ns", "test-snapshot", runner)
     assert result == mock_snapshot_data
+    # "--" ends option parsing; the snapshot name is passed positionally after it
+    runner.run_kubectl.assert_called_once_with(
+        ["get", "snapshot", "-n", "test-ns", "-ojson", "--", "test-snapshot"]
+    )
+
+
+def test_get_snapshot_data_rejects_flag_like_snapshot():
+    runner = MagicMock()
+    with pytest.raises(ValueError, match="must be a DNS-1123 name"):
+        get_snapshot_data("test-ns", "--server=https://evil.example", runner)
+    runner.run_kubectl.assert_not_called()
+
+
+def test_get_snapshot_data_rejects_flag_like_namespace():
+    runner = MagicMock()
+    with pytest.raises(ValueError, match="must be a DNS-1123 name"):
+        get_snapshot_data("--server=https://evil.example", "test-snapshot", runner)
+    runner.run_kubectl.assert_not_called()
 
 
 def test_get_snapshot_data_kubectl_failure(monkeypatch):
@@ -941,3 +973,36 @@ def test_main_block_exit_code_on_error(monkeypatch, tmp_path):
                 exit(2)
 
     assert exc_info.value.code == 1
+
+
+# Drive the real __main__ block in-process via runpy to check exit-code mapping.
+
+FIXED_CVE_SCRIPT = os.path.realpath(
+    os.path.join(os.path.dirname(__file__), "..", "lib", "fixed-cve.py")
+)
+
+
+def test_main_kubectl_failure_surfaces_stderr_and_exits_1(monkeypatch, tmp_path, capsys):
+    """A kubectl failure is reported with its stderr and maps to exit 1, not a traceback."""
+    import runpy
+
+    release = tmp_path / "release.json"
+    prev = tmp_path / "previous.json"
+    release.write_text(json.dumps(mock_release_data))
+    prev.write_text(json.dumps(mock_release_data))
+
+    def failing_run(cmd, check=False, capture_output=False, text=False):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd=cmd, stderr="Error from server (Forbidden)"
+        )
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+    monkeypatch.setattr(sys, "argv", [
+        "fixed-cve.py", "--release", str(release), "--previousRelease", str(prev)
+    ])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(FIXED_CVE_SCRIPT, run_name="__main__")
+
+    assert exc.value.code == 1
+    assert "Error from server (Forbidden)" in capsys.readouterr().err
