@@ -209,6 +209,12 @@ def test_extract_nested_string_missing_key():
         extract_nested_string(data, "level1", "level2", "key")
 
 
+def test_extract_nested_string_missing_intermediate_key():
+    """Test that a missing intermediate key raises ValueError."""
+    with pytest.raises(ValueError, match="Missing 'level1' key in release data"):
+        extract_nested_string({}, "level1", "level2", "key")
+
+
 def test_extract_nested_string_not_dict():
     """Test that non-dict intermediate value raises ValueError."""
     data = {"level1": "not a dict"}
@@ -418,9 +424,21 @@ def test_process_component_invalid_current_image(monkeypatch):
     assert "no containerImage" in result["reason"]
 
 
-@pytest.mark.skipif(fixed_cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
+def test_process_component_invalid_previous_image_treated_as_new(monkeypatch):
+    """A valid current image with an invalid previous image is treated as new."""
+    current_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
+    previous_comp = {"name": "test-component", "containerImage": None}
+
+    result = process_component("test-component", current_comp, previous_comp, MagicMock())
+
+    assert result["status"] == "new"
+    assert result["current_image"] == "registry.io/image:v1"
+
+
 def test_process_component_current_sbom_download_failure(monkeypatch):
-    """Test processing component when current SBOM download fails (SBOM mode only)."""
+    """Test processing component when current SBOM download fails (SBOM mode)."""
+    monkeypatch.setattr(fixed_cve, "SCAN_TYPE", "sbom")
+
     class MockCmdRunner:
         def run_cosign(self, args):
             raise subprocess.CalledProcessError(1, ["cosign"], stderr="Error")
@@ -457,9 +475,9 @@ def test_process_component_compared_success(monkeypatch):
     assert "vulnerabilities_removed" in result
 
 
-@pytest.mark.skipif(fixed_cve.SCAN_TYPE == "image", reason="Only applicable in sbom mode")
 def test_process_component_previous_sbom_download_failure(monkeypatch):
-    """Test processing component when previous SBOM download fails (SBOM mode only)."""
+    """Test processing component when previous SBOM download fails (SBOM mode)."""
+    monkeypatch.setattr(fixed_cve, "SCAN_TYPE", "sbom")
     call_count = [0]
 
     class MockCmdRunner:
@@ -479,6 +497,78 @@ def test_process_component_previous_sbom_download_failure(monkeypatch):
 
     assert result["status"] == "error"
     assert "failed to download previous SBOM" in result["reason"]
+
+
+def test_process_component_sbom_mode_compared_success(monkeypatch):
+    """A successful SBOM comparison returns compared status with removed CVEs."""
+    monkeypatch.setattr(fixed_cve, "SCAN_TYPE", "sbom")
+
+    class MockCmdRunner:
+        def run_cosign(self, args):
+            return json.dumps(mock_sbom_data)
+
+    class MockVulnerabilityDiffer:
+        def __init__(self, previous_sbom=None, next_sbom=None, scanner=None, scan_type=None):
+            self.vulnerabilities_diff = ["CVE-2024-1234"]
+
+    monkeypatch.setattr(fixed_cve, 'VulnerabilityDiffer', MockVulnerabilityDiffer)
+
+    current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
+    previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
+
+    result = process_component("test-component", current_comp, previous_comp, MockCmdRunner())
+
+    assert result["status"] == "compared"
+    assert result["vulnerabilities_removed"] == ["CVE-2024-1234"]
+
+
+def test_process_component_sbom_mode_comparison_exception(monkeypatch):
+    """A failing SBOM comparison is reported as an error (SBOM mode)."""
+    monkeypatch.setattr(fixed_cve, "SCAN_TYPE", "sbom")
+
+    class MockCmdRunner:
+        def run_cosign(self, args):
+            return json.dumps(mock_sbom_data)
+
+    def boom(*args, **kwargs):
+        raise Exception("ACS scan failed")
+
+    monkeypatch.setattr(fixed_cve, 'compare_component_sboms', boom)
+
+    current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
+    previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
+
+    result = process_component("test-component", current_comp, previous_comp, MockCmdRunner())
+
+    assert result["status"] == "error"
+    assert "comparison failed" in result["reason"]
+
+
+def test_sbom_download_failure_through_real_external_commands(monkeypatch, capsys):
+    """A real cosign failure (RuntimeError from ExternalCommands) is handled as a
+    download failure: SBOM download returns None with its stderr logged, and the
+    component is recorded as an error rather than aborting the collector."""
+    monkeypatch.setattr(fixed_cve, "SCAN_TYPE", "sbom")
+
+    def failing_run(cmd, check=False, capture_output=False, text=False):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd=cmd, stderr="Error: entity not found in the registry"
+        )
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+
+    runner = ExternalCommands()
+    assert download_sbom_for_image("registry.io/image:v1", runner) is None
+    err = capsys.readouterr().err
+    assert "Failed to download SBOM" in err
+    assert "entity not found in the registry" in err
+
+    current_comp = {"name": "test-component", "containerImage": "registry.io/image:v2"}
+    previous_comp = {"name": "test-component", "containerImage": "registry.io/image:v1"}
+    result = process_component("test-component", current_comp, previous_comp, runner)
+
+    assert result["status"] == "error"
+    assert "failed to download current SBOM" in result["reason"]
 
 
 def test_process_component_comparison_exception(monkeypatch):
@@ -938,6 +1028,49 @@ def test_compare_releases_missing_roxctl(monkeypatch, tmp_path):
         compare_releases(MockCmdRunner())
 
 
+def test_compare_releases_logs_ns_mismatch_new_and_error(monkeypatch, tmp_path, capsys):
+    """Namespace mismatch, new components, and errored components are all logged."""
+    release_file = tmp_path / 'release.json'
+    prev_file = tmp_path / 'prev.json'
+
+    release_file.write_text(json.dumps({
+        "spec": {"snapshot": "test-snapshot"},
+        "metadata": {"namespace": "current-ns"}
+    }))
+    prev_file.write_text(json.dumps({
+        "spec": {"snapshot": "prev-snapshot"},
+        "metadata": {"namespace": "prev-ns"}
+    }))
+
+    monkeypatch.setattr(sys, 'argv', [
+        'cve.py', '--release', str(release_file), '--previousRelease', str(prev_file)
+    ])
+
+    call_count = [0]
+
+    class MockCmdRunner:
+        def run_kubectl(self, args):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Current snapshot: one new component and one with an invalid image
+                return json.dumps({"spec": {"components": [
+                    {"name": "comp-new", "containerImage": "registry.io/image:v1"},
+                    {"name": "comp-bad", "containerImage": None},
+                ]}})
+            # Previous snapshot has no components, so comp-new is new
+            return json.dumps({"spec": {"components": []}})
+
+    monkeypatch.setattr('shutil.which', lambda x: '/usr/bin/roxctl')
+
+    result = compare_releases(MockCmdRunner())
+
+    assert result == {"releaseNotes": {"cves": []}}
+    err = capsys.readouterr().err
+    assert "different namespaces (current-ns vs prev-ns)" in err
+    assert "Component comp-new is new in this release" in err
+    assert "Error processing comp-bad" in err
+
+
 # Tests for main execution block and exit codes
 
 def test_main_block_exit_code_on_error(monkeypatch, tmp_path):
@@ -1006,3 +1139,53 @@ def test_main_kubectl_failure_surfaces_stderr_and_exits_1(monkeypatch, tmp_path,
 
     assert exc.value.code == 1
     assert "Error from server (Forbidden)" in capsys.readouterr().err
+
+
+def _fake_kubectl_run(snapshot):
+    """Return a subprocess.run replacement that answers kubectl with a snapshot."""
+    def fake_run(cmd, check=False, capture_output=False, text=False):
+        return MockCompletedProcess(returncode=0, stdout=json.dumps(snapshot), stderr="")
+    return fake_run
+
+
+def test_main_success_exit_0(monkeypatch, tmp_path, capsys):
+    """A successful run prints the result JSON and exits 0."""
+    import runpy
+
+    release = tmp_path / "release.json"
+    prev = tmp_path / "previous.json"
+    release.write_text(json.dumps(mock_release_data))
+    prev.write_text("")  # empty previous release -> first-release path
+
+    monkeypatch.setattr(subprocess, "run", _fake_kubectl_run(mock_snapshot_data))
+    monkeypatch.setattr(sys, "argv", [
+        "fixed-cve.py", "--release", str(release), "--previousRelease", str(prev)
+    ])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(FIXED_CVE_SCRIPT, run_name="__main__")
+
+    assert exc.value.code == 0
+    assert json.loads(capsys.readouterr().out) == {"releaseNotes": {"cves": []}}
+
+
+def test_main_unexpected_error_exit_2(monkeypatch, tmp_path):
+    """An unexpected exception exits 2 with a traceback."""
+    import runpy
+
+    release = tmp_path / "release.json"
+    prev = tmp_path / "previous.json"
+    release.write_text(json.dumps(mock_release_data))
+    prev.write_text("")  # first-release path
+
+    # Component without a 'name' key -> KeyError -> generic handler -> exit(2)
+    broken_snapshot = {"spec": {"components": [{"containerImage": "registry.io/img:v1"}]}}
+    monkeypatch.setattr(subprocess, "run", _fake_kubectl_run(broken_snapshot))
+    monkeypatch.setattr(sys, "argv", [
+        "fixed-cve.py", "--release", str(release), "--previousRelease", str(prev)
+    ])
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(FIXED_CVE_SCRIPT, run_name="__main__")
+
+    assert exc.value.code == 2
