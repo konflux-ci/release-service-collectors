@@ -24,9 +24,14 @@ get_components_from_snapshot = cve.get_components_from_snapshot
 validate_container_image = cve.validate_container_image
 scan_component = cve.scan_component
 collect = cve.collect
+gating_records = cve.gating_records
+fetch_errata = cve.fetch_errata
+build_rhsa_summary = cve.build_rhsa_summary
+summarize = cve.summarize
 
 
 MockCompletedProcess = namedtuple('MockCompletedProcess', ['returncode', 'stdout', 'stderr'])
+MockResponse = namedtuple('MockResponse', ['status_code', 'json', 'text'])
 
 
 mock_release_data = {
@@ -377,6 +382,186 @@ def test_collect_fails_closed_on_missing_image(monkeypatch):
         collect(cmd_runner=MagicMock())
 
 
+# filtering: gating_records / fetch_errata / build_rhsa_summary / summarize
+
+def _record(severity="IMPORTANT", advisory="RHSA-2024:1234", cve="CVE-2024-1", component="comp"):
+    return {
+        "cveId": cve,
+        "cveSeverity": severity,
+        "advisoryId": advisory,
+        "konfluxComponent": component,
+    }
+
+
+def _errata(rhsa, released_on="2024-08-03T14:37:22Z"):
+    return {"RHSA": rhsa, "released_on": released_on, "severity": "important"}
+
+
+def _mock_get(payload, status_code=200):
+    def mock_get(url, timeout=None):
+        return MockResponse(status_code=status_code, json=lambda: payload, text="")
+    return mock_get
+
+
+def test_gating_records_keeps_critical_and_important_with_rhsa():
+    cves = [
+        _record(severity="CRITICAL", advisory="RHSA-2024:1"),
+        _record(severity="IMPORTANT", advisory="RHSA-2024:2"),
+    ]
+    assert [r["advisoryId"] for r in gating_records(cves)] == ["RHSA-2024:1", "RHSA-2024:2"]
+
+
+@pytest.mark.parametrize("severity", ["MODERATE", "LOW", "UNKNOWN"])
+def test_gating_records_drops_non_gating_severity(severity):
+    assert gating_records([_record(severity=severity)]) == []
+
+
+@pytest.mark.parametrize("advisory", ["", "RHBA-2024:1", "RHEA-2024:1", "whatever"])
+def test_gating_records_drops_non_rhsa_advisory(advisory):
+    assert gating_records([_record(advisory=advisory)]) == []
+
+
+def test_gating_records_normalizes_whitespace():
+    assert gating_records([_record(advisory="  RHSA-2024:1234  ")])[0]["advisoryId"] == "RHSA-2024:1234"
+
+
+@pytest.mark.parametrize("advisory", ["RHSA-24:1", "RHSA-2024-1", "RHSA-2024:", "rhsa-2024:1x"])
+def test_gating_records_raises_on_malformed_rhsa(advisory):
+    with pytest.raises(ValueError, match="malformed RHSA"):
+        gating_records([_record(advisory=advisory)])
+
+
+def test_gating_records_ignores_non_string_advisory():
+    rec = _record()
+    rec["advisoryId"] = None
+    assert gating_records([rec]) == []
+
+
+def test_fetch_errata_empty_returns_empty():
+    assert fetch_errata([]) == {}
+
+
+def test_fetch_errata_keys_by_rhsa(monkeypatch):
+    payload = [_errata("RHSA-2024:1"), _errata("RHSA-2024:2")]
+    monkeypatch.setattr(cve.requests, "get", _mock_get(payload))
+    errata = fetch_errata(["RHSA-2024:2", "RHSA-2024:1", "RHSA-2024:1"])
+    assert set(errata) == {"RHSA-2024:1", "RHSA-2024:2"}
+
+
+def test_fetch_errata_batches_unique_sorted(monkeypatch):
+    seen = {}
+
+    def mock_get(url, timeout=None):
+        seen["url"] = url
+        return MockResponse(
+            status_code=200, json=lambda: [_errata("RHSA-2024:1"), _errata("RHSA-2024:2")], text=""
+        )
+
+    monkeypatch.setattr(cve.requests, "get", mock_get)
+    fetch_errata(["RHSA-2024:2", "RHSA-2024:1", "RHSA-2024:2"])
+    assert seen["url"].endswith("rhsa_ids=RHSA-2024:1,RHSA-2024:2")
+
+
+def test_fetch_errata_fails_closed_on_missing(monkeypatch):
+    monkeypatch.setattr(cve.requests, "get", _mock_get([]))
+    with pytest.raises(RuntimeError, match="no Security Data API entry for: RHSA-2024:1"):
+        fetch_errata(["RHSA-2024:1"])
+
+
+def test_fetch_errata_raises_on_non_200(monkeypatch):
+    monkeypatch.setattr(cve.requests, "get", _mock_get([], status_code=503))
+    with pytest.raises(RuntimeError, match="503"):
+        fetch_errata(["RHSA-2024:1"])
+
+
+def test_fetch_errata_raises_on_non_list(monkeypatch):
+    monkeypatch.setattr(cve.requests, "get", _mock_get({"error": "x"}))
+    with pytest.raises(ValueError, match="unexpected"):
+        fetch_errata(["RHSA-2024:1"])
+
+
+@pytest.mark.parametrize("exc", [
+    cve.requests.exceptions.Timeout,
+    cve.requests.exceptions.ConnectionError,
+    cve.requests.exceptions.SSLError,
+])
+def test_fetch_errata_wraps_transport_errors_as_runtime_error(monkeypatch, exc):
+    def boom(url, timeout=None):
+        raise exc("boom")
+
+    monkeypatch.setattr(cve.requests, "get", boom)
+    with pytest.raises(RuntimeError, match="Security Data API request failed"):
+        fetch_errata(["RHSA-2024:1"])
+
+
+def test_fetch_errata_fails_closed_on_entry_missing_rhsa_key(monkeypatch):
+    # a 200 list whose object omits the RHSA key must not raise KeyError; the gating
+    # RHSA is then simply absent -> the named missing-id RuntimeError (exit 1)
+    monkeypatch.setattr(cve.requests, "get", _mock_get([{"released_on": "2024-01-01T00:00:00Z"}]))
+    with pytest.raises(RuntimeError, match="no Security Data API entry for: RHSA-2024:1"):
+        fetch_errata(["RHSA-2024:1"])
+
+
+def test_build_rhsa_summary_groups_and_dedupes():
+    records = [
+        _record(severity="IMPORTANT", advisory="RHSA-2024:1", cve="CVE-2", component="b"),
+        _record(severity="IMPORTANT", advisory="RHSA-2024:1", cve="CVE-1", component="a"),
+        _record(severity="IMPORTANT", advisory="RHSA-2024:1", cve="CVE-1", component="a"),
+    ]
+    summary = build_rhsa_summary(records, {"RHSA-2024:1": _errata("RHSA-2024:1")})
+    assert summary["rhsa"]["CRITICAL"] == []
+    assert summary["rhsa"]["IMPORTANT"] == [{
+        "advisory": "RHSA-2024:1",
+        "released_on": "2024-08-03T14:37:22Z",
+        "cves": ["CVE-1", "CVE-2"],
+        "components": ["a", "b"],
+    }]
+
+
+def test_build_rhsa_summary_most_severe_bucket():
+    # an RHSA referenced by both an IMPORTANT and a CRITICAL CVE lands in CRITICAL
+    records = [
+        _record(severity="IMPORTANT", advisory="RHSA-2024:1", cve="CVE-1"),
+        _record(severity="CRITICAL", advisory="RHSA-2024:1", cve="CVE-2"),
+    ]
+    summary = build_rhsa_summary(records, {"RHSA-2024:1": _errata("RHSA-2024:1")})
+    assert [e["advisory"] for e in summary["rhsa"]["CRITICAL"]] == ["RHSA-2024:1"]
+    assert summary["rhsa"]["IMPORTANT"] == []
+
+
+def test_build_rhsa_summary_released_on_verbatim():
+    errata = {"RHSA-2024:1": _errata("RHSA-2024:1", released_on="2024-01-02T03:04:05Z")}
+    summary = build_rhsa_summary([_record(advisory="RHSA-2024:1")], errata)
+    assert summary["rhsa"]["IMPORTANT"][0]["released_on"] == "2024-01-02T03:04:05Z"
+
+
+def test_build_rhsa_summary_missing_released_on_fails():
+    with pytest.raises(ValueError, match="missing released_on"):
+        build_rhsa_summary([_record(advisory="RHSA-2024:1")], {"RHSA-2024:1": {"RHSA": "RHSA-2024:1"}})
+
+
+def test_build_rhsa_summary_empty_both_buckets():
+    assert build_rhsa_summary([], {}) == {"rhsa": {"CRITICAL": [], "IMPORTANT": []}}
+
+
+def test_summarize_end_to_end(monkeypatch):
+    cves = [
+        _record(severity="CRITICAL", advisory="RHSA-2024:9", cve="CVE-9", component="x"),
+        _record(severity="MODERATE", advisory="RHSA-2024:5", cve="CVE-5"),  # dropped: severity
+        _record(severity="IMPORTANT", advisory="", cve="CVE-0"),            # dropped: no RHSA
+    ]
+    monkeypatch.setattr(cve.requests, "get", _mock_get([_errata("RHSA-2024:9")]))
+    assert summarize(cves) == {"rhsa": {
+        "CRITICAL": [{
+            "advisory": "RHSA-2024:9",
+            "released_on": "2024-08-03T14:37:22Z",
+            "cves": ["CVE-9"],
+            "components": ["x"],
+        }],
+        "IMPORTANT": [],
+    }}
+
+
 # __main__ entry block (executed in-process via runpy to drive the exit codes)
 
 CVE_SCRIPT = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "lib", "cve.py"))
@@ -406,17 +591,57 @@ def test_main_success_exit_0(monkeypatch, tmp_path, capsys):
     report = MagicMock()
     report.raw_result = mock_raw_result
     sys.modules['diffused.report'].ScanReport = MagicMock(return_value=report)
+    # mock_raw_result has one gating record (IMPORTANT, RHSA-2024:1234); the empty-advisory
+    # CRITICAL is dropped by the filter, so only RHSA-2024:1234 needs an errata entry
+    monkeypatch.setattr(cve.requests, "get", _mock_get([_errata("RHSA-2024:1234")]))
 
     code = _run_main(monkeypatch, ["cve.py", "tenant", "--release", str(release)])
     assert code == 0
-    # the result is printed to stdout as JSON
-    stdout = capsys.readouterr().out
-    assert json.loads(stdout)["cves"]
+    # the filtered RHSA summary is printed to stdout as JSON
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["rhsa"]["IMPORTANT"][0]["advisory"] == "RHSA-2024:1234"
+    assert summary["rhsa"]["CRITICAL"] == []
 
 
 def test_main_expected_error_exit_1(monkeypatch):
     # missing release file -> FileNotFoundError -> exit(1)
     code = _run_main(monkeypatch, ["cve.py", "--release", "/no/such/file.json"])
+    assert code == 1
+
+
+def test_main_fails_closed_on_missing_rhsa_exit_1(monkeypatch, tmp_path):
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps(mock_release_data))
+
+    monkeypatch.setattr("subprocess.run", _fake_kubectl_run(mock_snapshot_data))
+    monkeypatch.setattr("shutil.which", lambda c: "/usr/bin/roxctl")
+    report = MagicMock()
+    report.raw_result = mock_raw_result
+    sys.modules['diffused.report'].ScanReport = MagicMock(return_value=report)
+    # Security Data API has no entry for the gating RHSA -> RuntimeError -> exit 1 (fail closed)
+    monkeypatch.setattr(cve.requests, "get", _mock_get([]))
+
+    code = _run_main(monkeypatch, ["cve.py", "tenant", "--release", str(release)])
+    assert code == 1
+
+
+def test_main_fails_closed_on_api_transport_error_exit_1(monkeypatch, tmp_path):
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps(mock_release_data))
+
+    monkeypatch.setattr("subprocess.run", _fake_kubectl_run(mock_snapshot_data))
+    monkeypatch.setattr("shutil.which", lambda c: "/usr/bin/roxctl")
+    report = MagicMock()
+    report.raw_result = mock_raw_result
+    sys.modules['diffused.report'].ScanReport = MagicMock(return_value=report)
+
+    def boom(url, timeout=None):
+        raise cve.requests.exceptions.ConnectionError("no route to host")
+
+    # a transport failure to the Security Data API maps to exit 1, not an exit-2 traceback
+    monkeypatch.setattr(cve.requests, "get", boom)
+
+    code = _run_main(monkeypatch, ["cve.py", "tenant", "--release", str(release)])
     assert code == 1
 
 

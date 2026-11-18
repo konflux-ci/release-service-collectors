@@ -3,13 +3,14 @@
 CVE Collector for Release Service
 
 This script scans the container image(s) of the current release with Red Hat
-Advanced Cluster Security (RHACS) through diffused-lib and reports *all* the
-vulnerabilities found. Unlike the fixed-cve collector, this is not a diff.
+Advanced Cluster Security (RHACS) through diffused-lib. Unlike the fixed-cve
+collector, this is not a diff: only the current image is scanned.
 
-No filtering is applied here: every vulnerability reported by the scanner is
-emitted, tagged with the owning Konflux component. The following pipeline task
-selects the CVEs that have an RHSA advisory, narrows them to Critical/High and
-computes the safe dates.
+The scan is filtered to the Critical/Important CVEs that carry an RHSA advisory,
+grouped per RHSA with each RHSA's released_on date fetched from the Red Hat
+Security Data API, and emitted as a compact summary. The raw scan never leaves
+the collector, so the large per-component vulnerability list is not persisted
+anywhere.
 
 Usage:
     python lib/cve.py --release release.json
@@ -25,28 +26,23 @@ Arguments:
 
 Output Format:
     {
-        "cves": [
-            {
-                "konfluxComponent": "my-component",
-                "cveId": "CVE-2024-1234",
-                "cveSeverity": "IMPORTANT",
-                "cveCVSS": 7.5,
-                "cveInfo": "https://access.redhat.com/security/cve/CVE-2024-1234",
-                "advisoryId": "RHSA-2024:1234",
-                "advisoryInfo": "https://access.redhat.com/errata/RHSA-2024:1234",
-                "componentName": "some-package",
-                "componentVersion": "1.0.0-1.el8",
-                "componentFixedVersion": "0:1.0.0-2.el8"
-            }
-        ]
+        "rhsa": {
+            "CRITICAL": [
+                {
+                    "advisory": "RHSA-2024:1234",
+                    "released_on": "2024-08-03T14:37:22Z",
+                    "cves": ["CVE-2024-1234", "CVE-2024-1235"],
+                    "components": ["my-component", "other-component"]
+                }
+            ],
+            "IMPORTANT": [ ... ]
+        }
     }
 
-    Or when no vulnerabilities are found:
-    {"cves": []}
-
-    Each record is the scanner's vulnerability entry passed through verbatim with
-    the owning "konfluxComponent" added, so any extra fields the scanner reports
-    are preserved for downstream tasks.
+    Both buckets ("CRITICAL" and "IMPORTANT") are always present (empty list when
+    nothing is found). Each RHSA appears once, in the bucket of the most severe CVE
+    severity present for it; CVE ids and Konflux components are deduped and sorted;
+    released_on is copied verbatim from the Security Data API.
 
 Notes:
     - Fail-closed: any scan failure (including ACS being unreachable) or a missing
@@ -77,11 +73,21 @@ import subprocess
 import sys
 from typing import Optional, Dict, Any, List
 
+import requests
 from diffused.report import ScanReport  # type: ignore[import-untyped]
 
 # Kubernetes resource names and namespaces are DNS-1123 (sub)domains; anything else is
 # rejected so a value like "--server=https://evil" cannot be parsed by kubectl as a flag.
 DNS1123_NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+
+# CVE severities that gate a release; membership is the gating filter, the rank picks the bucket.
+SEVERITY_RANK = {"CRITICAL": 2, "IMPORTANT": 1}
+
+# Red Hat Security Data API CSAF index; supports a comma-separated rhsa_ids batch lookup.
+CSAF_INDEX_URL = "https://access.redhat.com/hydra/rest/securitydata/csaf.json"
+
+# Exact RHSA id form; RHBA/RHEA/empty advisories do not gate.
+RHSA_RE = re.compile(r"^RHSA-\d{4}:\d+$")
 
 
 def log(message: str) -> None:
@@ -345,10 +351,137 @@ def collect(cmd_runner: Optional[ExternalCommands] = None) -> Dict[str, Any]:
     return {"cves": cves}
 
 
+def gating_records(cves: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Keep the Critical/Important CVE records that reference an RHSA advisory.
+
+    Filtering is per-CVE on the ACS cveSeverity (not the errata severity). The
+    advisoryId is normalized (whitespace stripped). Records with an empty, RHBA, or
+    RHEA advisory id are ignored (not gating). A record whose advisoryId looks like an
+    RHSA but is malformed raises ValueError (fail closed) rather than being silently
+    dropped, which could hide a gating advisory.
+    """
+    records: List[Dict[str, Any]] = []
+    for record in cves:
+        if record.get("cveSeverity") not in SEVERITY_RANK:
+            continue
+        advisory = record.get("advisoryId")
+        if not isinstance(advisory, str):
+            continue
+        advisory = advisory.strip()
+        if RHSA_RE.match(advisory):
+            records.append({**record, "advisoryId": advisory})
+        elif advisory.upper().startswith("RHSA"):
+            raise ValueError(f"malformed RHSA advisory id: {advisory!r}")
+        # Empty / RHBA / RHEA / other non-RHSA ids are intentionally ignored.
+    return records
+
+
+def fetch_errata(rhsas: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetch Security Data API index entries for the given RHSAs, keyed by RHSA id.
+
+    One batched, unauthenticated request to the CSAF index. Fails closed: a missing
+    RHSA (the API answers 200 with [] or omits the entry) raises RuntimeError naming
+    the absent ids, because an absent RHSA means lag or a bug (public RHSA is in the
+    index). A transport failure (timeout, connection, or TLS error) is likewise
+    surfaced as a RuntimeError so it maps to the expected-error exit code rather than
+    a traceback.
+    """
+    if not rhsas:
+        return {}
+    unique = sorted(set(rhsas))
+    url = f"{CSAF_INDEX_URL}?rhsa_ids={','.join(unique)}"
+    try:
+        response = requests.get(url, timeout=60)
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Security Data API request failed for {url}: {e}") from e
+    if response.status_code != 200:
+        raise RuntimeError(f"Security Data API returned {response.status_code} for {url}")
+    entries = response.json()
+    if not isinstance(entries, list):
+        raise ValueError(f"unexpected Security Data API response: {str(entries)[:200]}")
+    # Index by RHSA id; skip entries without a usable id so a malformed object does not
+    # raise KeyError. A gating RHSA that is absent is caught by the missing-id check below.
+    by_rhsa = {
+        entry["RHSA"]: entry
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("RHSA"), str) and entry["RHSA"]
+    }
+    missing = [rhsa for rhsa in unique if rhsa not in by_rhsa]
+    if missing:
+        raise RuntimeError(f"no Security Data API entry for: {', '.join(missing)}")
+    return by_rhsa
+
+
+def _released_on(entry: Dict[str, Any]) -> str:
+    """Return the released_on string from a Security Data API entry, verbatim."""
+    value = entry.get("released_on")
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{entry.get('RHSA')}: missing released_on")
+    return value
+
+
+def build_rhsa_summary(
+    records: List[Dict[str, Any]], errata: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Group gating records by RHSA into the {"rhsa": ...} summary.
+
+    Each RHSA appears once, in the bucket of the most severe cveSeverity present for
+    it (CRITICAL if any gating CRITICAL CVE references it, else IMPORTANT). CVE ids
+    and Konflux components are deduped and sorted; released_on is copied verbatim from
+    the errata entry.
+    """
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for record in records:
+        advisory = record["advisoryId"]
+        rank = SEVERITY_RANK[record["cveSeverity"]]
+        entry = grouped.setdefault(advisory, {"rank": rank, "cves": set(), "components": set()})
+        entry["rank"] = max(entry["rank"], rank)
+        cve_id = record.get("cveId")
+        if cve_id:
+            entry["cves"].add(cve_id)
+        component = record.get("konfluxComponent")
+        if component:
+            entry["components"].add(component)
+
+    buckets: Dict[str, List[Dict[str, Any]]] = {"CRITICAL": [], "IMPORTANT": []}
+    for advisory in sorted(grouped):
+        data = grouped[advisory]
+        bucket = "CRITICAL" if data["rank"] == SEVERITY_RANK["CRITICAL"] else "IMPORTANT"
+        buckets[bucket].append({
+            "advisory": advisory,
+            "released_on": _released_on(errata[advisory]),
+            "cves": sorted(data["cves"]),
+            "components": sorted(data["components"]),
+        })
+    return {"rhsa": buckets}
+
+
+def summarize(cves: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Filter a raw scan (list of CVE records) into the RHSA summary.
+
+    Keeps Critical/Important-with-RHSA records, fetches each RHSA's released_on from
+    the Security Data API, and groups them into
+    {"rhsa": {"CRITICAL": [...], "IMPORTANT": [...]}}.
+    """
+    records = gating_records(cves)
+    errata = fetch_errata([record["advisoryId"] for record in records])
+    summary = build_rhsa_summary(records, errata)
+    log(
+        f"Filtered scan: {len(summary['rhsa']['CRITICAL'])} CRITICAL, "
+        f"{len(summary['rhsa']['IMPORTANT'])} IMPORTANT RHSAs"
+    )
+    return summary
+
+
 if __name__ == "__main__":
     try:
         result = collect()
-        print(json.dumps(result))
+        summary = summarize(result["cves"])
+        print(json.dumps(summary))
         log("Completed scanning release")
         exit(0)
     except (ValueError, FileNotFoundError, RuntimeError, json.JSONDecodeError) as e:
