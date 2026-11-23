@@ -3,14 +3,14 @@ import pytest
 import subprocess
 
 # Import module with hyphens in name using importlib
-single_component_cve = importlib.import_module("lib.single-component-cve")
+single_component_gitlog_cve = importlib.import_module("lib.single-component-gitlog-cve")
 
-single_component_info = single_component_cve.single_component_info
-create_cves_record = single_component_cve.create_cves_record
-git_log_titles_per_component = single_component_cve.git_log_titles_per_component
-get_single_component_from_snapshot = single_component_cve.get_single_component_from_snapshot
-clear_repo_cache = single_component_cve.clear_repo_cache
-cleanup_repo_cache = single_component_cve.cleanup_repo_cache
+single_component_info = single_component_gitlog_cve.single_component_info
+create_cves_record = single_component_gitlog_cve.create_cves_record
+git_log_titles_per_component = single_component_gitlog_cve.git_log_titles_per_component
+get_single_component_from_snapshot = single_component_gitlog_cve.get_single_component_from_snapshot
+clear_repo_cache = single_component_gitlog_cve.clear_repo_cache
+cleanup_repo_cache = single_component_gitlog_cve.cleanup_repo_cache
 
 
 @pytest.fixture(autouse=True)
@@ -231,7 +231,7 @@ def test_context_fallback_from_previous_release(monkeypatch, tmp_path):
     the context field but the previous release had it defined. The script
     should fall back to using the previous release's context for filtering.
     """
-    get_component_detail = single_component_cve.get_component_detail
+    get_component_detail = single_component_gitlog_cve.get_component_detail
 
     # Current component missing context
     current_components = [{

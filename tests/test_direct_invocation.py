@@ -29,8 +29,8 @@ def test_gitlog_cve_runs_directly_without_module_not_found():
     assert "doesn't exists" in result.stderr
 
 
-def test_single_component_cve_runs_directly_without_module_not_found():
-    result = _run_direct("single-component-cve.py", "tenant", "--release", "/tmp/does-not-exist.json",
+def test_single_component_gitlog_cve_runs_directly_without_module_not_found():
+    result = _run_direct("single-component-gitlog-cve.py", "tenant", "--release", "/tmp/does-not-exist.json",
                           "--previousRelease", "/tmp/does-not-exist-2.json")
     assert "ModuleNotFoundError" not in result.stderr
     assert "doesn't exists" in result.stderr
