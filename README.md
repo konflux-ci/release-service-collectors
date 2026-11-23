@@ -93,11 +93,15 @@ are logged and produce no CVE entries.
 
 The CVE collector scans the container image(s) of the current release with Red Hat
 Advanced Cluster Security (RHACS) through
-[`diffused-lib`](https://pypi.org/project/diffused-lib/) and reports *all* the
-vulnerabilities found. Unlike the Fixed CVE collector this is not a diff: only the
-current image is scanned, since the check is an absolute property of the image being
-released. No filtering is applied here; a later pipeline task selects and grades the
-relevant CVEs.
+[`diffused-lib`](https://pypi.org/project/diffused-lib/). Unlike the Fixed CVE
+collector this is not a diff: only the current image is scanned, since the check is
+an absolute property of the image being released.
+
+The scan is filtered to the Critical/Important CVEs that carry an RHSA advisory,
+grouped per RHSA with each RHSA's `released_on` date fetched from the
+[Red Hat Security Data API](https://docs.redhat.com/en/documentation/red_hat_security_data_api/1.0/),
+and emitted as a compact summary. The raw scan never leaves the collector, so the
+large per-component vulnerability list is not persisted to the release status.
 
 Example execution:
 ```
@@ -105,28 +109,34 @@ $ python lib/cve.py <tenant/managed> \
   --release release.json
 
 {
-    "cves": [
-        {
-            "konfluxComponent": "my-component",
-            "cveId": "CVE-2024-1234",
-            "cveSeverity": "IMPORTANT",
-            "cveCVSS": 7.5,
-            "cveInfo": "https://access.redhat.com/security/cve/CVE-2024-1234",
-            "advisoryId": "RHSA-2024:1234",
-            "advisoryInfo": "https://access.redhat.com/errata/RHSA-2024:1234",
-            "componentName": "some-package",
-            "componentVersion": "1.0.0-1.el8",
-            "componentFixedVersion": "0:1.0.0-2.el8"
-        }
-    ]
+    "rhsa": {
+        "CRITICAL": [
+            {
+                "advisory": "RHSA-2024:5678",
+                "released_on": "2024-08-03T14:37:22Z",
+                "cves": ["CVE-2024-5678"],
+                "components": ["my-component"]
+            }
+        ],
+        "IMPORTANT": [
+            {
+                "advisory": "RHSA-2024:1234",
+                "released_on": "2024-10-01T14:37:22Z",
+                "cves": ["CVE-2024-1234"],
+                "components": ["my-component", "other-component"]
+            }
+        ]
+    }
 }
 ```
 
-Each record is the scanner's vulnerability entry passed through verbatim with the
-owning `konfluxComponent` added, so any extra fields the scanner reports are
-preserved. The collector fails closed: any scan failure (including ACS being
-unreachable) or a missing container image fails the whole collector, so a release
-cannot pass on an image that could not be scanned.
+Both buckets are always present (empty list when nothing is found). Each RHSA appears
+once, in the bucket of the most severe CVE severity present for it; CVE ids and
+Konflux components are deduped and sorted; `released_on` is copied verbatim from the
+Security Data API. The collector fails closed: any scan failure (including ACS being
+unreachable), a missing container image, or an RHSA with no Security Data API entry
+fails the whole collector, so a release cannot pass on an image that could not be
+scanned and graded.
 
 ### Gitlog CVE
 
