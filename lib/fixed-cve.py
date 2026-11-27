@@ -73,10 +73,25 @@ SCAN_TYPE = "image"
 # Release notes accept only CVE-format keys.
 CVE_KEY_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,}$")
 
+# Kubernetes resource names and namespaces are DNS-1123 (sub)domains; anything else is
+# rejected so a value like "--server=https://evil" cannot be parsed by kubectl as a flag.
+DNS1123_NAME = re.compile(r"^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$")
+
 
 def log(message: str) -> None:
     """Log a message to stderr."""
     print(message, file=sys.stderr)
+
+
+def validate_resource_name(value: str, kind: str) -> str:
+    """Validate a kubectl resource name/namespace as a DNS-1123 name.
+
+    Guards against argument injection: a snapshot or namespace that starts with '-'
+    would otherwise be parsed by kubectl as a flag (e.g. '--server=...').
+    """
+    if not value or len(value) > 253 or not DNS1123_NAME.fullmatch(value):
+        raise ValueError(f"invalid {kind} {value!r}: must be a DNS-1123 name")
+    return value
 
 
 class ExternalCommands:
@@ -88,10 +103,19 @@ class ExternalCommands:
     """
 
     def _run_command(self, command: str, args: List[str]) -> str:
-        """Execute external command and return stdout."""
+        """Execute external command and return stdout.
+
+        On failure, surface the command's stderr (which carries the useful API
+        message, e.g. "Error from server (Forbidden)") as a RuntimeError so it is
+        logged and maps to the expected-error exit code instead of a bare traceback.
+        """
         cmd = [command] + args
         log(f"Running {' '.join(cmd)}")
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            raise RuntimeError(f"{command} failed (exit {e.returncode}): {stderr}") from e
         return result.stdout
 
     def run_kubectl(self, args: List[str]) -> str:
@@ -198,7 +222,10 @@ def get_snapshot_namespace(data_release: Dict[str, Any]) -> str:
 def get_snapshot_data(namespace: str, snapshot: str, cmd_runner: Optional[ExternalCommands] = None) -> Dict[str, Any]:
     """Retrieve snapshot data from Kubernetes using kubectl."""
     cmd_runner = cmd_runner or ExternalCommands()
-    output = cmd_runner.run_kubectl(["get", "snapshot", snapshot, "-n", namespace, "-ojson"])
+    validate_resource_name(namespace, "namespace")
+    validate_resource_name(snapshot, "snapshot")
+    # "--" ends option parsing so the snapshot name can never be read as a flag
+    output = cmd_runner.run_kubectl(["get", "snapshot", "-n", namespace, "-ojson", "--", snapshot])
     log(f"Retrieved snapshot {snapshot} successfully ({len(output)} bytes)")
     return json.loads(output)
 
@@ -243,8 +270,10 @@ def download_sbom_for_image(container_image: str, cmd_runner: Optional[ExternalC
     try:
         output = cmd_runner.run_cosign(["download", "sbom", container_image])
         return json.loads(output)
-    except subprocess.CalledProcessError as e:
-        log(f"Failed to download SBOM for {container_image}: {e.stderr or e}")
+    except RuntimeError as e:
+        # ExternalCommands._run_command re-raises a failed command as RuntimeError
+        # (carrying its stderr), so a cosign failure arrives here, not as CalledProcessError.
+        log(f"Failed to download SBOM for {container_image}: {e}")
     except (json.JSONDecodeError, Exception) as e:
         log(f"Failed to process SBOM for {container_image}: {e}")
     return None
@@ -548,7 +577,7 @@ if __name__ == "__main__":
         print(json.dumps(result))
         log("Completed comparing releases")
         exit(0)
-    except (ValueError, FileNotFoundError, RuntimeError) as e:
+    except (ValueError, FileNotFoundError, RuntimeError, json.JSONDecodeError) as e:
         log(f"ERROR: {e}")
         exit(1)
     except Exception as e:
